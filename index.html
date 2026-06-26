@@ -446,6 +446,7 @@ function renderAdminHours(){
     <div style="display:flex;gap:6px">
       <button class="btn btn-sm" onclick="adminLogout()"><i class="ti ti-logout"></i> Sign out</button>
       <button class="btn btn-sm" onclick="exportHours()"><i class="ti ti-download"></i> Export CSV</button>
+      <button class="btn btn-sm btn-gold" onclick="exportWeeklyReport()"><i class="ti ti-calendar-week"></i> Weekly Report</button>
     </div>
   </div>
   <div class="divider-line"></div>
@@ -886,17 +887,106 @@ function exportHours(){
   const rows=allStaffHours();
   if(!rows.length){showToast('No hours to export.',false);return;}
   let csv='Employee,Email,Events,Total Hours\n';
-  rows.forEach(r=>csv+=`"${r.name}","${r.email}",${r.events},${(r.ms/3600000).toFixed(2)}\n`);
+  rows.forEach(r=>{csv+='"'+r.name+'","'+r.email+'",'+r.events+','+(r.ms/3600000).toFixed(2)+'\n';});
   csv+='\nEvent Breakdown\nEmployee,Event,Role,Date,Hours\n';
   state.timeEntries.forEach(t=>{
     const ev=state.events.find(e=>e.id===t.event_id);
     const ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    csv+=`"${t.staff_name}","${ev?ev.name:t.event_id}","${t.role||''}","${ev?ev.date:''}",${(ms/3600000).toFixed(2)}\n`;
+    csv+='"'+t.staff_name+'","'+(ev?ev.name:t.event_id)+'","'+(t.role||'')+'","'+(ev?ev.date:'')+'",'+( ms/3600000).toFixed(2)+'\n';
   });
   const a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
   a.download='sns-hours.csv'; a.click();
   showToast('Hours exported!');
+}
+
+function getWeekStart(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function fmtWeekLabel(monday) {
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  const opts = {month:'short', day:'numeric'};
+  return monday.toLocaleDateString([],opts) + ' - ' + sunday.toLocaleDateString([],opts);
+}
+
+function exportWeeklyReport(){
+  if(!state.timeEntries.length){showToast('No hours to export.',false);return;}
+  const weekMap = {};
+  state.timeEntries.forEach(t => {
+    const ev = state.events.find(e => e.id === t.event_id);
+    if(!ev || !ev.date) return;
+    const ms = (t.total_ms||0) + (t.clocked_in&&!t.clocked_out ? Date.now()-t.clocked_in : 0);
+    if(!ms) return;
+    const evDate = new Date(ev.date + 'T12:00:00');
+    const weekStart = getWeekStart(evDate);
+    const weekKey = weekStart.toISOString().split('T')[0];
+    const weekLabel = fmtWeekLabel(weekStart);
+    if(!weekMap[weekKey]) weekMap[weekKey] = { label: weekLabel, staff: {} };
+    if(!weekMap[weekKey].staff[t.staff_name]) {
+      weekMap[weekKey].staff[t.staff_name] = { name:t.staff_name, email:t.staff_email||'', roles:{}, totalMs:0 };
+    }
+    const staffEntry = weekMap[weekKey].staff[t.staff_name];
+    staffEntry.totalMs += ms;
+    const role = t.role || 'Unspecified';
+    staffEntry.roles[role] = (staffEntry.roles[role] || 0) + ms;
+  });
+  const sortedWeeks = Object.keys(weekMap).sort();
+  if(!sortedWeeks.length){showToast('No hours data found.',false);return;}
+  // Build overall totals summary first
+  const overallMap = {};
+  state.timeEntries.forEach(t => {
+    const ms = (t.total_ms||0) + (t.clocked_in&&!t.clocked_out ? Date.now()-t.clocked_in : 0);
+    if(!ms) return;
+    if(!overallMap[t.staff_name]) overallMap[t.staff_name] = {name:t.staff_name, email:t.staff_email||'', ms:0};
+    overallMap[t.staff_name].ms += ms;
+  });
+  const overallList = Object.values(overallMap).sort((a,b)=>a.name.localeCompare(b.name));
+
+  let csv = 'SHAKEN & STIRRED EVENTS - WEEKLY HOURS REPORT\n';
+  csv += 'Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'\n\n';
+
+  // Summary section
+  csv += 'TOTAL HOURS SUMMARY\n';
+  csv += 'Employee,Email,Total Hours\n';
+  overallList.forEach(s => {
+    csv += '"'+s.name+'","'+s.email+'",'+(s.ms/3600000).toFixed(2)+'\n';
+  });
+  const grandTotalMs = overallList.reduce((sum,s)=>sum+s.ms,0);
+  csv += ',Grand Total,'+(grandTotalMs/3600000).toFixed(2)+'\n\n';
+  csv += '---\n\n';
+
+  sortedWeeks.forEach(weekKey => {
+    const week = weekMap[weekKey];
+    csv += 'Week: '+week.label+' (Mon - Sun)\n';
+    csv += 'Employee,Email,Role,Hours\n';
+    const staffList = Object.values(week.staff).sort((a,b)=>a.name.localeCompare(b.name));
+    staffList.forEach(s => {
+      const roles = Object.keys(s.roles);
+      if(roles.length <= 1) {
+        csv += '"'+s.name+'","'+s.email+'","'+(roles[0]||'')+'",'+(s.totalMs/3600000).toFixed(2)+'\n';
+      } else {
+        roles.forEach(role => {
+          csv += '"'+s.name+'","'+s.email+'","'+role+'",'+(s.roles[role]/3600000).toFixed(2)+'\n';
+        });
+        csv += '"'+s.name+'","'+s.email+'","TOTAL",'+(s.totalMs/3600000).toFixed(2)+'\n';
+      }
+    });
+    const weekTotalMs = Object.values(week.staff).reduce((sum,s)=>sum+s.totalMs,0);
+    csv += ',,Week Total,'+(weekTotalMs/3600000).toFixed(2)+'\n\n';
+  });
+  const today = new Date().toISOString().split('T')[0];
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'sns-weekly-report-'+today+'.csv';
+  a.click();
+  showToast('Weekly report downloaded!');
 }
 
 function setStaff(){
