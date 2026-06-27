@@ -433,6 +433,7 @@ function renderAdminEvents(){
         <div class="card-actions">
           <button class="btn btn-sm" onclick="openBidsModal('${e.id}')"><i class="ti ti-list"></i> Bids</button>
           <button class="btn btn-sm" onclick="openEventHoursModal('${e.id}')"><i class="ti ti-clock"></i> Hours</button>
+          <button class="btn btn-sm" onclick="openEditModal('${e.id}')"><i class="ti ti-edit"></i> Edit</button>
           <button class="btn btn-sm" onclick="toggleStatus('${e.id}','${e.status||'open'}')">${!e.status||e.status==='open'?'Close':'Reopen'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteEvent('${e.id}')"><i class="ti ti-trash"></i></button>
         </div>
@@ -1191,6 +1192,63 @@ async function sendFullyStaffedEmails(eventId){
   for(const b of bidders){
     await sendEmail(b.staff_email,b.staff_name,subject,body);
   }
+}
+
+function openEditModal(eventId){
+  const e=state.events.find(ev=>ev.id===eventId); if(!e)return;
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-edit';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Edit event <button class="btn btn-sm" onclick="closeModal('modal-edit')"><i class="ti ti-x"></i></button></div>
+    <div class="form-group"><label class="form-label">Event name</label><input type="text" id="e-name" value="${esc(e.name)}"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Event type</label>
+        <select id="e-type"><option value="">— Select —</option>${EVENT_TYPES.map(t=>`<option value="${t}" ${e.type===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Guest count</label><input type="number" id="e-guests" min="0" value="${esc(e.guests||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label><input type="date" id="e-date" value="${esc(e.date||'')}"></div>
+      <div class="form-group"><label class="form-label">Start time</label><input type="time" id="e-start" value="${esc(e.start_time||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">End time</label><input type="time" id="e-end" value="${esc(e.end_time||'')}"></div>
+      <div class="form-group"><label class="form-label">Venue / location</label><input type="text" id="e-loc" value="${esc(e.location||'')}"></div>
+    </div>
+    <div style="background:rgba(201,168,76,0.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">
+      <div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">Staff needed</div>
+      <div class="form-row-3">
+        <div class="form-group" style="margin-bottom:0"><label class="form-label"><i class="ti ti-bowl-spoon"></i> Servers</label><input type="number" id="e-servers" min="0" value="${e.servers_needed||0}"></div>
+        <div class="form-group" style="margin-bottom:0"><label class="form-label"><i class="ti ti-glass"></i> Bartenders</label><input type="number" id="e-bartenders" min="0" value="${e.bartenders_needed||0}"></div>
+        <div class="form-group" style="margin-bottom:0"><label class="form-label"><i class="ti ti-chef-hat"></i> Chefs</label><input type="number" id="e-chefs" min="0" value="${e.chefs_needed||0}"></div>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Staff notes</label><textarea id="e-notes">${esc(e.notes||'')}</textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-edit')">Cancel</button>
+      <button class="btn btn-gold" onclick="updateEvent('${eventId}')"><i class="ti ti-check"></i> Save changes</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function updateEvent(eventId){
+  const name=document.getElementById('e-name').value.trim();
+  const date=document.getElementById('e-date').value;
+  if(!name||!date){showToast('Name and date are required.',false);return;}
+  const {error}=await db.from('events').update({
+    name,date,
+    type:document.getElementById('e-type').value||null,
+    start_time:document.getElementById('e-start').value||null,
+    end_time:document.getElementById('e-end').value||null,
+    location:document.getElementById('e-loc').value.trim()||null,
+    notes:document.getElementById('e-notes').value.trim()||null,
+    guests:document.getElementById('e-guests').value||null,
+    servers_needed:parseInt(document.getElementById('e-servers').value)||0,
+    bartenders_needed:parseInt(document.getElementById('e-bartenders').value)||0,
+    chefs_needed:parseInt(document.getElementById('e-chefs').value)||0,
+  }).eq('id',eventId);
+  if(error){showToast('Error saving changes.',false);console.error(error);return;}
+  closeModal('modal-edit');
+  await fetchAll(); render(); showToast('Event updated!');
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
