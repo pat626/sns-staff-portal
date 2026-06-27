@@ -149,6 +149,34 @@ textarea{resize:vertical;min-height:64px}
 .empty i{font-size:28px;display:block;margin-bottom:10px;opacity:0.35}
 .loading{text-align:center;padding:3rem;color:var(--ss-muted);font-size:13px}
 .role-section-title{font-size:11px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:0.08em;margin:1rem 0 0.5rem;padding-bottom:6px;border-bottom:1px solid var(--ss-border)}
+.tc-wrap{max-width:460px;margin:0 auto;padding:1.5rem 0}
+.tc-card{background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-radius:8px;padding:2rem;text-align:center}
+.tc-brand{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:1.75rem}
+.tc-clock-display{font-size:52px;font-weight:300;color:var(--ss-cream);letter-spacing:0.04em;font-variant-numeric:tabular-nums;margin-bottom:4px}
+.tc-date-display{font-size:12px;color:var(--ss-muted);margin-bottom:2rem;letter-spacing:0.03em}
+.tc-name-input{width:100%;font-family:'Inter',sans-serif;font-size:14px;padding:11px 14px;border:1px solid var(--ss-border);border-radius:4px;background:var(--ss-surface2);color:var(--ss-text);text-align:center;margin-bottom:1.25rem;letter-spacing:0.02em}
+.tc-name-input:focus{outline:none;border-color:var(--ss-gold-dim);box-shadow:0 0 0 2px rgba(201,168,76,0.12)}
+.tc-name-input::placeholder{color:var(--ss-muted)}
+.tc-name-input:disabled{opacity:0.5}
+.tc-status-row{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem;min-height:20px;letter-spacing:0.02em}
+.tc-status-row.active{color:#66bb8a}
+.tc-status-dot{width:7px;height:7px;border-radius:50%;background:var(--ss-muted);flex-shrink:0}
+.tc-status-dot.active{background:#66bb8a}
+.tc-btn{width:100%;padding:14px;border-radius:4px;border:none;font-family:'Inter',sans-serif;font-size:14px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;transition:opacity 0.15s;letter-spacing:0.03em}
+.tc-btn-in{background:var(--ss-gold);color:var(--ss-black)}
+.tc-btn-in:hover:not(:disabled){opacity:0.88}
+.tc-btn-in:disabled{opacity:0.35;cursor:default}
+.tc-btn-out{background:rgba(192,57,43,0.15);color:#e57373;border:1px solid rgba(229,115,115,0.35)}
+.tc-btn-out:hover{opacity:0.85}
+.tc-punch-note{font-size:11px;color:var(--ss-muted);margin-top:4px;letter-spacing:0.02em}
+.tc-hist-divider{height:1px;background:linear-gradient(90deg,var(--ss-gold-dim),transparent);margin:1.5rem 0}
+.tc-hist-title{font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:0.1em;text-align:left;margin-bottom:10px}
+.tc-hist-item{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--ss-border);text-align:left}
+.tc-hist-item:last-child{border-bottom:none}
+.tc-hi-name{font-size:13px;font-weight:500;color:var(--ss-cream)}
+.tc-hi-time{font-size:11px;color:var(--ss-muted);margin-top:2px}
+.tc-hi-hrs{font-size:12px;font-weight:500;color:var(--ss-gold-light)}
+.tc-hi-active{font-size:10px;padding:2px 8px;border-radius:3px;background:rgba(46,125,82,0.15);color:#66bb8a;border:1px solid rgba(102,187,138,0.25);font-weight:500;letter-spacing:0.04em;text-transform:uppercase}
 @media(max-width:600px){
   .form-row,.form-row-3{grid-template-columns:1fr}
   .stats-row{grid-template-columns:1fr 1fr}
@@ -179,6 +207,7 @@ textarea{resize:vertical;min-height:64px}
       <div class="view-toggle">
         <button class="view-btn" id="btn-admin" onclick="switchView('admin')">Admin</button>
         <button class="view-btn" id="btn-employee" onclick="switchView('employee')">Staff</button>
+        <button class="view-btn" id="btn-timeclock" onclick="switchView('timeclock')">Time Clock</button>
       </div>
     </div>
   </div>
@@ -200,7 +229,7 @@ const ADMIN_EMAIL = 'Pat@forkhospitality.com';
 let state = {
   view:'employee', adminLoggedIn:false, adminSession:null,
   employeeName:'', employeeEmail:'',
-  events:[], bids:[], timeEntries:[], shiftRequests:[],
+  events:[], bids:[], timeEntries:[], shiftRequests:[], timeclockEntries:[],
   dateFilter:'upcoming', adminTab:'events',
   ejsServiceId:'service_vcgm7pc', ejsTemplateId:'template_qj4q1fi', ejsPublicKey:'6iPAaWxrM1Qxr5m5-'
 };
@@ -240,20 +269,23 @@ async function sendEmail(toEmail,toName,subject,body){
 
 // ── Supabase data fetchers ──
 async function fetchAll(){
-  const [evRes, bidRes, teRes, srRes] = await Promise.all([
+  const [evRes, bidRes, teRes, srRes, tcRes] = await Promise.all([
     db.from('events').select('*').order('date', {ascending:true}),
     db.from('bids').select('*'),
     db.from('time_entries').select('*'),
-    db.from('shift_requests').select('*').order('created_at', {ascending:false})
+    db.from('shift_requests').select('*').order('created_at', {ascending:false}),
+    db.from('timeclock').select('*').order('clocked_in', {ascending:false})
   ]);
   if(evRes.error) console.error('Events fetch error:', evRes.error);
   if(bidRes.error) console.error('Bids fetch error:', bidRes.error);
   if(teRes.error) console.error('TimeEntries fetch error:', teRes.error);
   if(srRes.error) console.error('ShiftRequests fetch error:', srRes.error);
+  if(tcRes.error) console.error('Timeclock fetch error:', tcRes.error);
   state.events = evRes.data || [];
   state.bids = bidRes.data || [];
   state.timeEntries = teRes.data || [];
   state.shiftRequests = srRes.data || [];
+  state.timeclockEntries = tcRes.data || [];
 }
 
 // ── Auth ──
@@ -286,7 +318,11 @@ function setFilter(f){state.dateFilter=f;render();}
 function render(){
   document.getElementById('btn-admin').classList.toggle('active',state.view==='admin');
   document.getElementById('btn-employee').classList.toggle('active',state.view==='employee');
-  document.getElementById('main-content').innerHTML = state.view==='admin' ? renderAdmin() : renderEmployee();
+  document.getElementById('btn-timeclock').classList.toggle('active',state.view==='timeclock');
+  if(state.view==='admin') document.getElementById('main-content').innerHTML=renderAdmin();
+  else if(state.view==='timeclock') document.getElementById('main-content').innerHTML=renderTimeclock();
+  else document.getElementById('main-content').innerHTML=renderEmployee();
+  if(state.view==='timeclock') startTimeclockClock();
 }
 
 function filteredEvents(evs){
@@ -350,12 +386,20 @@ function totalMsForStaff(name){
 }
 function allStaffHours(){
   const map={};
+  // Event-based time entries
   state.timeEntries.forEach(t=>{
     if(!map[t.staff_name])map[t.staff_name]={name:t.staff_name,email:t.staff_email||'',ms:0,events:0};
     let ms=t.total_ms||0;
     if(t.clocked_in&&!t.clocked_out)ms+=Date.now()-t.clocked_in;
     map[t.staff_name].ms+=ms;
     map[t.staff_name].events++;
+  });
+  // Standalone timeclock entries
+  (state.timeclockEntries||[]).forEach(t=>{
+    if(!map[t.staff_name])map[t.staff_name]={name:t.staff_name,email:'',ms:0,events:0};
+    let ms=t.total_ms||0;
+    if(t.clocked_in&&!t.clocked_out)ms+=Date.now()-t.clocked_in;
+    map[t.staff_name].ms+=ms;
   });
   return Object.values(map).sort((a,b)=>b.ms-a.ms);
 }
@@ -1046,6 +1090,23 @@ function exportWeeklyReport(){
     const role = t.role || 'Unspecified';
     staffEntry.roles[role] = (staffEntry.roles[role] || 0) + ms;
   });
+  // Include standalone timeclock entries in weekly report
+  (state.timeclockEntries||[]).forEach(t => {
+    if(!t.clocked_in) return;
+    const ms = (t.total_ms||0) + (t.clocked_in&&!t.clocked_out ? Date.now()-t.clocked_in : 0);
+    if(!ms) return;
+    const evDate = new Date(t.clocked_in);
+    const weekStart = getWeekStart(evDate);
+    const weekKey = weekStart.toISOString().split('T')[0];
+    const weekLabel = fmtWeekLabel(weekStart);
+    if(!weekMap[weekKey]) weekMap[weekKey] = { label: weekLabel, staff: {} };
+    if(!weekMap[weekKey].staff[t.staff_name]) {
+      weekMap[weekKey].staff[t.staff_name] = { name:t.staff_name, email:'', roles:{}, totalMs:0 };
+    }
+    const staffEntry = weekMap[weekKey].staff[t.staff_name];
+    staffEntry.totalMs += ms;
+    staffEntry.roles['Time Clock'] = (staffEntry.roles['Time Clock'] || 0) + ms;
+  });
   const sortedWeeks = Object.keys(weekMap).sort();
   if(!sortedWeeks.length){showToast('No hours data found.',false);return;}
   // Build overall totals summary first
@@ -1305,6 +1366,122 @@ async function updateEvent(eventId){
   if(error){showToast('Error saving changes.',false);console.error(error);return;}
   closeModal('modal-edit');
   await fetchAll(); render(); showToast('Event updated!');
+}
+
+// ── Timeclock helpers ──
+function totalMsFromTimeclock(name){
+  return (state.timeclockEntries||[]).filter(t=>t.staff_name===name).reduce((s,t)=>{
+    let ms=t.total_ms||0;
+    if(t.clocked_in&&!t.clocked_out)ms+=Date.now()-t.clocked_in;
+    return s+ms;
+  },0);
+}
+
+let tcClockInterval=null;
+function startTimeclockClock(){
+  if(tcClockInterval)clearInterval(tcClockInterval);
+  tcClockInterval=setInterval(()=>{
+    const el=document.getElementById('tc-live-clock');
+    const del=document.getElementById('tc-live-date');
+    if(!el){clearInterval(tcClockInterval);return;}
+    const now=new Date();
+    const pad=n=>String(n).padStart(2,'0');
+    el.textContent=pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+    if(del)del.textContent=now.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  },1000);
+  // init immediately
+  const el=document.getElementById('tc-live-clock');
+  const del=document.getElementById('tc-live-date');
+  if(el){
+    const now=new Date();const pad=n=>String(n).padStart(2,'0');
+    el.textContent=pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+    if(del)del.textContent=now.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  }
+}
+
+function renderTimeclock(){
+  const recent=(state.timeclockEntries||[]).slice(0,8);
+  const activeEntry=recent.find(t=>t.clocked_in&&!t.clocked_out);
+  return`<div class="tc-wrap">
+    <div class="tc-card">
+      <div class="tc-brand">
+        <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M8 3h12l-2 7H10L8 3z" fill="none" stroke="#c9a84c" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M10 10l4 12 4-12" stroke="#c9a84c" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7 3h14" stroke="#c9a84c" stroke-width="1.2" stroke-linecap="round"/>
+          <circle cx="14" cy="22" r="1.5" fill="#c9a84c" opacity="0.6"/>
+          <path d="M11 17h6" stroke="#c9a84c" stroke-width="0.8" stroke-linecap="round" opacity="0.5"/>
+        </svg>
+        <div>
+          <div class="brand-name" style="font-family:'Playfair Display',serif;font-size:16px;font-weight:500;color:var(--ss-gold);letter-spacing:0.02em;line-height:1.1">Shaken &amp; Stirred</div>
+          <div class="brand-sub" style="font-size:9px;color:var(--ss-muted);letter-spacing:0.12em;text-transform:uppercase;margin-top:1px">Time Clock</div>
+        </div>
+      </div>
+
+      <div class="tc-clock-display" id="tc-live-clock">--:--:--</div>
+      <div class="tc-date-display" id="tc-live-date">--</div>
+
+      <input type="text" class="tc-name-input" id="tc-name-field" placeholder="Enter your name" oninput="tcCheckName()" ${activeEntry?'disabled':''}>
+
+      <div class="tc-status-row ${activeEntry?'active':''}" id="tc-status-row">
+        <span class="tc-status-dot ${activeEntry?'active':''}" id="tc-status-dot"></span>
+        <span id="tc-status-text">${activeEntry?esc(activeEntry.staff_name)+' is currently clocked in':'Enter your name to clock in'}</span>
+      </div>
+
+      ${activeEntry
+        ?`<button class="tc-btn tc-btn-out" id="tc-btn-out" onclick="tcPunchOut('${activeEntry.id}','${esc(activeEntry.staff_name)}')"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out — ${esc(activeEntry.staff_name)}</button>`
+        :`<button class="tc-btn tc-btn-in" id="tc-btn-in" onclick="tcPunchIn()" disabled><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>`}
+      <div class="tc-punch-note" id="tc-punch-note">${activeEntry?'Tap Clock out when your shift ends':'Type your name above then tap Clock in'}</div>
+
+      <div class="tc-hist-divider"></div>
+      <div class="tc-hist-title">Recent punches</div>
+      <div>
+        ${recent.length===0?`<div style="font-size:13px;color:var(--ss-muted);padding:1rem 0;text-align:center">No punches yet today.</div>`:''}
+        ${recent.map(t=>{
+          const isActive=t.clocked_in&&!t.clocked_out;
+          const ms=(t.total_ms||0)+(isActive?Date.now()-t.clocked_in:0);
+          const inTime=t.clocked_in?new Date(t.clocked_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'--';
+          const outTime=t.clocked_out?new Date(t.clocked_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+          return`<div class="tc-hist-item">
+            <div>
+              <div class="tc-hi-name">${esc(t.staff_name)}</div>
+              <div class="tc-hi-time">${isActive?'Clocked in '+inTime:inTime+' – '+outTime}</div>
+            </div>
+            ${isActive?`<span class="tc-hi-active">Active</span>`:`<span class="tc-hi-hrs">${fmtHours(ms)}</span>`}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function tcCheckName(){
+  const name=(document.getElementById('tc-name-field')||{}).value?.trim();
+  const btn=document.getElementById('tc-btn-in');
+  if(!btn)return;
+  if(name){btn.disabled=false;}
+  else{btn.disabled=true;}
+}
+
+async function tcPunchIn(){
+  const name=(document.getElementById('tc-name-field')||{}).value?.trim();
+  if(!name){showToast('Please enter your name.',false);return;}
+  const {error}=await db.from('timeclock').insert({
+    staff_name:name, clocked_in:Date.now(), clocked_out:null, total_ms:0
+  });
+  if(error){showToast('Error clocking in.',false);console.error(error);return;}
+  await fetchAll();render();showToast(name+' clocked in!');
+}
+
+async function tcPunchOut(entryId, staffName){
+  const entry=(state.timeclockEntries||[]).find(t=>t.id===entryId);
+  if(!entry){showToast('Entry not found.',false);return;}
+  const ms=Date.now()-entry.clocked_in;
+  const {error}=await db.from('timeclock').update({
+    clocked_out:Date.now(), total_ms:ms
+  }).eq('id',entryId);
+  if(error){showToast('Error clocking out.',false);console.error(error);return;}
+  await fetchAll();render();showToast(staffName+' clocked out — '+fmtHours(ms)+' logged.');
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
