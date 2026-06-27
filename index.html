@@ -1434,7 +1434,10 @@ function renderTimeclock(){
       <div class="tc-punch-note" id="tc-punch-note">${activeEntry?'Tap Clock out when your shift ends':'Type your name above then tap Clock in'}</div>
 
       <div class="tc-hist-divider"></div>
-      <div class="tc-hist-title">Recent punches</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="tc-hist-title" style="margin-bottom:0">Recent punches</div>
+        <button class="btn btn-sm" onclick="openAddTimeclockModal()" style="font-size:11px"><i class="ti ti-plus" aria-hidden="true"></i> Add entry</button>
+      </div>
       <div>
         ${recent.length===0?`<div style="font-size:13px;color:var(--ss-muted);padding:1rem 0;text-align:center">No punches yet today.</div>`:''}
         ${recent.map(t=>{
@@ -1442,12 +1445,17 @@ function renderTimeclock(){
           const ms=(t.total_ms||0)+(isActive?Date.now()-t.clocked_in:0);
           const inTime=t.clocked_in?new Date(t.clocked_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'--';
           const outTime=t.clocked_out?new Date(t.clocked_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+          const inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric'}):'';
           return`<div class="tc-hist-item">
-            <div>
+            <div style="flex:1;min-width:0">
               <div class="tc-hi-name">${esc(t.staff_name)}</div>
-              <div class="tc-hi-time">${isActive?'Clocked in '+inTime:inTime+' – '+outTime}</div>
+              <div class="tc-hi-time">${inDate} · ${isActive?'Clocked in '+inTime:inTime+' – '+(outTime||'--')}</div>
             </div>
-            ${isActive?`<span class="tc-hi-active">Active</span>`:`<span class="tc-hi-hrs">${fmtHours(ms)}</span>`}
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              ${isActive?`<span class="tc-hi-active">Active</span>`:`<span class="tc-hi-hrs">${fmtHours(ms)}</span>`}
+              <button class="btn btn-sm" onclick="openEditTimeclockModal('${t.id}')" title="Edit"><i class="ti ti-edit" aria-hidden="true"></i></button>
+              <button class="btn btn-sm btn-danger" onclick="deleteTimeclockEntry('${t.id}')" title="Delete"><i class="ti ti-trash" aria-hidden="true"></i></button>
+            </div>
           </div>`;
         }).join('')}
       </div>
@@ -1482,6 +1490,116 @@ async function tcPunchOut(entryId, staffName){
   }).eq('id',entryId);
   if(error){showToast('Error clocking out.',false);console.error(error);return;}
   await fetchAll();render();showToast(staffName+' clocked out — '+fmtHours(ms)+' logged.');
+}
+
+function openAddTimeclockModal(){
+  const today = new Date().toISOString().split('T')[0];
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-add';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Add time entry <button class="btn btn-sm" onclick="closeModal('modal-tc-add')"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div class="form-group"><label class="form-label">Staff name</label>
+      <input type="text" id="tca-name" placeholder="Jane Smith"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label>
+        <input type="date" id="tca-date" value="${today}"></div>
+      <div class="form-group"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Clock in time</label>
+        <input type="time" id="tca-in"></div>
+      <div class="form-group"><label class="form-label">Clock out time</label>
+        <input type="time" id="tca-out"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>
+      <input type="text" id="tca-note" placeholder="e.g. Forgot to clock in"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-tc-add')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveNewTimeclockEntry()"><i class="ti ti-plus" aria-hidden="true"></i> Add entry</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveNewTimeclockEntry(){
+  const name=(document.getElementById('tca-name')||{}).value?.trim();
+  const date=(document.getElementById('tca-date')||{}).value;
+  const inTime=(document.getElementById('tca-in')||{}).value;
+  const outTime=(document.getElementById('tca-out')||{}).value;
+  const note=(document.getElementById('tca-note')||{}).value?.trim();
+  if(!name){showToast('Please enter a staff name.',false);return;}
+  if(!date||!inTime){showToast('Date and clock-in time are required.',false);return;}
+  const clockedIn=new Date(date+'T'+inTime).getTime();
+  const clockedOut=outTime?new Date(date+'T'+outTime).getTime():null;
+  if(clockedOut&&clockedOut<=clockedIn){showToast('Clock-out must be after clock-in.',false);return;}
+  const totalMs=clockedOut?(clockedOut-clockedIn):0;
+  const {error}=await db.from('timeclock').insert({
+    staff_name:name, clocked_in:clockedIn,
+    clocked_out:clockedOut||null, total_ms:totalMs,
+    note:note||null
+  });
+  if(error){showToast('Error saving entry.',false);console.error(error);return;}
+  closeModal('modal-tc-add');
+  await fetchAll();render();showToast('Entry added!');
+}
+
+function openEditTimeclockModal(entryId){
+  const t=(state.timeclockEntries||[]).find(e=>e.id===entryId);
+  if(!t)return;
+  const toDateStr=ts=>{if(!ts)return'';const d=new Date(ts);return d.toISOString().split('T')[0];};
+  const toTimeStr=ts=>{if(!ts)return'';const d=new Date(ts);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+  const entryDate=toDateStr(t.clocked_in);
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-edit';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Edit time entry <button class="btn btn-sm" onclick="closeModal('modal-tc-edit')"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div class="form-group"><label class="form-label">Staff name</label>
+      <input type="text" id="tce-name" value="${esc(t.staff_name)}"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Date</label>
+        <input type="date" id="tce-date" value="${entryDate}"></div>
+      <div class="form-group"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Clock in time</label>
+        <input type="time" id="tce-in" value="${toTimeStr(t.clocked_in)}"></div>
+      <div class="form-group"><label class="form-label">Clock out time</label>
+        <input type="time" id="tce-out" value="${toTimeStr(t.clocked_out)}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>
+      <input type="text" id="tce-note" value="${esc(t.note||'')}"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-tc-edit')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEditedTimeclockEntry('${entryId}')"><i class="ti ti-check" aria-hidden="true"></i> Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveEditedTimeclockEntry(entryId){
+  const name=(document.getElementById('tce-name')||{}).value?.trim();
+  const date=(document.getElementById('tce-date')||{}).value;
+  const inTime=(document.getElementById('tce-in')||{}).value;
+  const outTime=(document.getElementById('tce-out')||{}).value;
+  const note=(document.getElementById('tce-note')||{}).value?.trim();
+  if(!name||!date||!inTime){showToast('Name, date and clock-in time are required.',false);return;}
+  const clockedIn=new Date(date+'T'+inTime).getTime();
+  const clockedOut=outTime?new Date(date+'T'+outTime).getTime():null;
+  if(clockedOut&&clockedOut<=clockedIn){showToast('Clock-out must be after clock-in.',false);return;}
+  const totalMs=clockedOut?(clockedOut-clockedIn):0;
+  const {error}=await db.from('timeclock').update({
+    staff_name:name, clocked_in:clockedIn,
+    clocked_out:clockedOut||null, total_ms:totalMs,
+    note:note||null
+  }).eq('id',entryId);
+  if(error){showToast('Error saving entry.',false);console.error(error);return;}
+  closeModal('modal-tc-edit');
+  await fetchAll();render();showToast('Entry updated!');
+}
+
+async function deleteTimeclockEntry(entryId){
+  if(!confirm('Delete this time entry? This cannot be undone.'))return;
+  const {error}=await db.from('timeclock').delete().eq('id',entryId);
+  if(error){showToast('Error deleting entry.',false);console.error(error);return;}
+  await fetchAll();render();showToast('Entry deleted.');
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
