@@ -200,7 +200,7 @@ const ADMIN_EMAIL = 'Pat@forkhospitality.com';
 let state = {
   view:'employee', adminLoggedIn:false, adminSession:null,
   employeeName:'', employeeEmail:'',
-  events:[], bids:[], timeEntries:[],
+  events:[], bids:[], timeEntries:[], shiftRequests:[],
   dateFilter:'upcoming', adminTab:'events',
   ejsServiceId:'service_vcgm7pc', ejsTemplateId:'template_qj4q1fi', ejsPublicKey:'6iPAaWxrM1Qxr5m5-'
 };
@@ -240,17 +240,20 @@ async function sendEmail(toEmail,toName,subject,body){
 
 // ── Supabase data fetchers ──
 async function fetchAll(){
-  const [evRes, bidRes, teRes] = await Promise.all([
+  const [evRes, bidRes, teRes, srRes] = await Promise.all([
     db.from('events').select('*').order('date', {ascending:true}),
     db.from('bids').select('*'),
-    db.from('time_entries').select('*')
+    db.from('time_entries').select('*'),
+    db.from('shift_requests').select('*').order('created_at', {ascending:false})
   ]);
   if(evRes.error) console.error('Events fetch error:', evRes.error);
   if(bidRes.error) console.error('Bids fetch error:', bidRes.error);
   if(teRes.error) console.error('TimeEntries fetch error:', teRes.error);
+  if(srRes.error) console.error('ShiftRequests fetch error:', srRes.error);
   state.events = evRes.data || [];
   state.bids = bidRes.data || [];
   state.timeEntries = teRes.data || [];
+  state.shiftRequests = srRes.data || [];
 }
 
 // ── Auth ──
@@ -361,13 +364,15 @@ function allStaffHours(){
 function renderAdmin(){
   if(!state.adminLoggedIn) return renderAdminLogin();
   const ejsOk=state.ejsPublicKey&&state.ejsServiceId&&state.ejsTemplateId;
+  const pendingCount=(state.shiftRequests||[]).filter(r=>r.status==='pending').length;
   return`
   ${!ejsOk?`<div class="info-box"><i class="ti ti-mail-off"></i><div>Email notifications aren't configured. Click <strong>Settings</strong> (top right) to set up EmailJS.</div></div>`:''}
   <div class="tabs">
     <button class="tab ${state.adminTab==='events'?'active':''}" onclick="setAdminTab('events')"><i class="ti ti-calendar-event"></i> Events</button>
     <button class="tab ${state.adminTab==='hours'?'active':''}" onclick="setAdminTab('hours')"><i class="ti ti-clock"></i> Hours</button>
+    <button class="tab ${state.adminTab==='requests'?'active':''}" onclick="setAdminTab('requests')"><i class="ti ti-arrows-exchange"></i> Requests${pendingCount>0?' <span style="background:var(--fill-danger);color:var(--on-danger);border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pendingCount+'</span>':''}</button>
   </div>
-  ${state.adminTab==='events'?renderAdminEvents():renderAdminHours()}`;
+  ${state.adminTab==='events'?renderAdminEvents():state.adminTab==='hours'?renderAdminHours():renderAdminRequests()}`;
 }
 
 function renderAdminLogin(){
@@ -434,6 +439,48 @@ function renderAdminEvents(){
       </div>`;
     }).join('')}
   </div>`;
+}
+
+function renderAdminRequests(){
+  const requests = (state.shiftRequests||[]);
+  const pending = requests.filter(r=>r.status==='pending');
+  const resolved = requests.filter(r=>r.status!=='pending');
+  const renderRequest = (r) => {
+    const ev = state.events.find(e=>e.id===r.event_id);
+    const statusColor = r.status==='approved'?'var(--text-success)':r.status==='denied'?'var(--text-danger)':'var(--ss-gold)';
+    const statusBg = r.status==='approved'?'var(--bg-success)':r.status==='denied'?'var(--bg-danger)':'rgba(201,168,76,0.1)';
+    return `<div style="background:var(--ss-surface);border:1px solid var(--ss-border);border-radius:6px;padding:1rem 1.25rem;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--ss-cream)">${esc(r.requester_name)}</div>
+          <div style="font-size:11px;color:var(--ss-muted);margin-top:2px">${esc(r.request_type==='swap'?'Swap request':'Give up shift')}</div>
+        </div>
+        <span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:3px;background:${statusBg};color:${statusColor};border:1px solid ${statusColor};text-transform:uppercase;letter-spacing:0.04em">${r.status}</span>
+      </div>
+      <div style="font-size:12px;color:var(--ss-muted);display:flex;flex-direction:column;gap:3px;margin-bottom:10px">
+        <div><i class="ti ti-calendar-event" style="font-size:13px;vertical-align:-1px;margin-right:4px"></i>${ev?esc(ev.name)+' — '+fmtDate(ev.date):'Unknown event'}</div>
+        ${r.request_type==='swap'?`<div><i class="ti ti-arrows-exchange" style="font-size:13px;vertical-align:-1px;margin-right:4px"></i>Swap with: <strong style="color:var(--ss-cream)">${esc(r.swap_with_name)}</strong>${r.swap_with_email?' ('+esc(r.swap_with_email)+')':''}</div>`:''}
+        ${r.reason?`<div><i class="ti ti-notes" style="font-size:13px;vertical-align:-1px;margin-right:4px"></i>"${esc(r.reason)}"</div>`:''}
+      </div>
+      ${r.status==='pending'?`<div style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-success" onclick="resolveRequest('${r.id}','approved')"><i class="ti ti-check"></i> Approve</button>
+        <button class="btn btn-sm btn-danger" onclick="resolveRequest('${r.id}','denied')"><i class="ti ti-x"></i> Deny</button>
+      </div>`:`<div style="font-size:11px;color:var(--ss-muted)">Resolved ${new Date(r.created_at).toLocaleDateString()}</div>`}
+    </div>`;
+  };
+  return`
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+    <div class="section-title">Shift Requests</div>
+    <button class="btn btn-sm" onclick="adminLogout()"><i class="ti ti-logout"></i> Sign out</button>
+  </div>
+  <div class="divider-line"></div>
+  ${pending.length===0&&resolved.length===0?`<div class="empty"><i class="ti ti-arrows-exchange"></i>No shift requests yet.</div>`:''}
+  ${pending.length>0?`
+  <div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.75rem">Pending (${pending.length})</div>
+  ${pending.map(renderRequest).join('')}`:''}
+  ${resolved.length>0?`
+  <div style="font-size:10px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:0.1em;margin:1.25rem 0 0.75rem">Resolved</div>
+  ${resolved.map(renderRequest).join('')}`:''}`;
 }
 
 function renderAdminHours(){
@@ -519,6 +566,7 @@ function renderEmployee(){
             ${isIn
               ?`<button class="btn btn-clockout btn-sm" onclick="clockOut('${e.id}')"><i class="ti ti-player-stop"></i> Clock out</button>`
               :`<button class="btn btn-clock btn-sm" onclick="clockIn('${e.id}')"><i class="ti ti-player-play"></i> Clock in</button>`}
+            <button class="btn btn-sm" onclick="openShiftRequestModal('${e.id}')"><i class="ti ti-arrows-exchange"></i> Change shift</button>
           </div>
         </div>`;
       }).join('')}
@@ -811,7 +859,11 @@ async function selectBid(bidId, eventId, role, needed){
     const bartsFilled=state.bids.filter(b=>b.event_id===eventId&&b.role==='Bartender'&&b.selected).length;
     const chefsFilled=state.bids.filter(b=>b.event_id===eventId&&b.role==='Chef'&&b.selected).length;
     const allFilled=(serversFilled>=(e.servers_needed||0))&&(bartsFilled>=(e.bartenders_needed||0))&&(chefsFilled>=(e.chefs_needed||0));
-    if(allFilled)await db.from('events').update({status:'filled'}).eq('id',eventId);
+    if(allFilled){
+      await db.from('events').update({status:'filled'}).eq('id',eventId);
+      await fetchAll();
+      await sendFullyStaffedEmails(eventId);
+    }
   }
   const bid=state.bids.find(b=>b.id===bidId);
   await fetchAll(); closeModal('modal-bids'); openBidsModal(eventId); render();
@@ -1017,6 +1069,165 @@ async function saveSettings(){
   state.ejsServiceId=document.getElementById('s-sid').value.trim();
   state.ejsTemplateId=document.getElementById('s-tid').value.trim();
   saveEjs(); closeModal('modal-settings'); showToast('Settings saved.');
+}
+
+function openShiftRequestModal(eventId){
+  const e=state.events.find(ev=>ev.id===eventId); if(!e)return;
+  const existingRequest=(state.shiftRequests||[]).find(r=>r.event_id===eventId&&r.requester_name===state.employeeName&&r.status==='pending');
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-shift-req';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title"><span>Change shift</span><button class="btn btn-sm" onclick="closeModal('modal-shift-req')"><i class="ti ti-x"></i></button></div>
+    ${existingRequest?`<div class="info-box" style="margin-bottom:1rem"><i class="ti ti-info-circle"></i>You already have a pending ${existingRequest.request_type} request for this event. Please wait for admin approval.</div>`:''}
+    <div style="background:rgba(201,168,76,0.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1.25rem">
+      <div style="font-family:'Playfair Display',serif;font-size:15px;color:var(--ss-cream);margin-bottom:4px">${esc(e.name)}</div>
+      <div style="font-size:12px;color:var(--ss-muted)">${fmtDate(e.date)}${e.start_time?' · '+esc(e.start_time):''}</div>
+    </div>
+    ${existingRequest?'':`
+    <div class="form-group"><label class="form-label">What would you like to do?</label>
+      <select id="sr-type" onchange="toggleSwapFields()">
+        <option value="giveup">Give up this shift</option>
+        <option value="swap">Swap with another staff member</option>
+      </select>
+    </div>
+    <div id="swap-fields" style="display:none">
+      <div class="form-group"><label class="form-label">Swap with — their name</label>
+        <input type="text" id="sr-swap-name" placeholder="Staff member's name"></div>
+      <div class="form-group"><label class="form-label">Their email <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(so they get notified)</span></label>
+        <input type="email" id="sr-swap-email" placeholder="their@email.com"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Reason <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>
+      <textarea id="sr-reason" placeholder="Let the admin know why…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-shift-req')">Cancel</button>
+      <button class="btn btn-gold" onclick="submitShiftRequest('${eventId}')"><i class="ti ti-send"></i> Submit request</button>
+    </div>`}
+    ${existingRequest?`<div class="modal-actions"><button class="btn" onclick="closeModal('modal-shift-req')">Close</button></div>`:''}
+  </div>`;
+  document.body.appendChild(m);
+}
+
+function toggleSwapFields(){
+  const t=document.getElementById('sr-type');
+  const sf=document.getElementById('swap-fields');
+  if(t&&sf) sf.style.display=t.value==='swap'?'block':'none';
+}
+
+async function submitShiftRequest(eventId){
+  const type=document.getElementById('sr-type').value;
+  const reason=(document.getElementById('sr-reason')||{}).value?.trim()||'';
+  const swapName=type==='swap'?(document.getElementById('sr-swap-name')||{}).value?.trim():'';
+  const swapEmail=type==='swap'?(document.getElementById('sr-swap-email')||{}).value?.trim():'';
+  if(type==='swap'&&!swapName){showToast('Please enter the name of who you want to swap with.',false);return;}
+  const {error}=await db.from('shift_requests').insert({
+    event_id:eventId, requester_name:state.employeeName,
+    requester_email:state.employeeEmail, request_type:type,
+    swap_with_name:swapName||null, swap_with_email:swapEmail||null,
+    reason:reason||null, status:'pending'
+  });
+  if(error){showToast('Error submitting request.',false);console.error(error);return;}
+  closeModal('modal-shift-req');
+  await fetchAll(); render(); showToast('Request submitted — waiting for admin approval.');
+  // Notify admin
+  const ev=state.events.find(e=>e.id===eventId);
+  if(ev){
+    const body=type==='swap'
+      ? 'Shift swap request from '+state.employeeName+' for '+ev.name+' ('+ev.date+').
+
+They want to swap with: '+swapName+(swapEmail?' ('+swapEmail+')':'')+'
+'+(reason?'Reason: '+reason+'
+':'')+'
+Log in to the staff portal to approve or deny.'
+      : 'Shift give-up request from '+state.employeeName+' for '+ev.name+' ('+ev.date+').
+
+'+(reason?'Reason: '+reason+'
+':'')+'
+Log in to the staff portal to approve or deny.';
+    await sendEmail(ADMIN_EMAIL,'Pat',(type==='swap'?'Swap request: ':'Give-up request: ')+ev.name+' — '+state.employeeName, body);
+    // Notify swap partner if swap
+    if(type==='swap'&&swapEmail){
+      const swapBody='Hi '+swapName+',
+
+'+state.employeeName+' has requested to swap their shift on '+ev.name+' ('+ev.date+') with you.
+
+This swap is pending admin approval. You will be notified once a decision is made.
+
+— The Shaken & Stirred Team';
+      await sendEmail(swapEmail,swapName,'Shift swap request: '+ev.name,swapBody);
+    }
+  }
+}
+
+async function resolveRequest(requestId, status){
+  const r=(state.shiftRequests||[]).find(sr=>sr.id===requestId); if(!r)return;
+  const ev=state.events.find(e=>e.id===r.event_id);
+  await db.from('shift_requests').update({status}).eq('id',requestId);
+  if(status==='approved'){
+    if(r.request_type==='giveup'){
+      // Deselect the bid and reopen slot
+      const bid=state.bids.find(b=>b.event_id===r.event_id&&b.staff_name===r.requester_name&&b.selected);
+      if(bid){
+        await db.from('bids').update({selected:false}).eq('id',bid.id);
+        if(ev&&ev.status==='filled') await db.from('events').update({status:'open'}).eq('id',r.event_id);
+      }
+      // Notify employee
+      if(r.requester_email&&ev){
+        await sendEmail(r.requester_email,r.requester_name,'Shift give-up approved: '+ev.name,'Hi '+r.requester_name+',
+
+Your request to give up your shift on '+ev.name+' ('+ev.date+') has been approved.
+
+— The Shaken & Stirred Team');
+      }
+    } else if(r.request_type==='swap'){
+      // Deselect requester, select swap partner if they have a bid, else create one
+      const requesterBid=state.bids.find(b=>b.event_id===r.event_id&&b.staff_name===r.requester_name&&b.selected);
+      if(requesterBid) await db.from('bids').update({selected:false}).eq('id',requesterBid.id);
+      const swapBid=state.bids.find(b=>b.event_id===r.event_id&&b.staff_name===r.swap_with_name);
+      if(swapBid){
+        await db.from('bids').update({selected:true}).eq('id',swapBid.id);
+      } else {
+        await db.from('bids').insert({event_id:r.event_id,staff_name:r.swap_with_name,staff_email:r.swap_with_email||'',role:requesterBid?requesterBid.role:'Server',note:'Added via swap',selected:true});
+      }
+      // Notify both parties
+      if(ev){
+        if(r.requester_email) await sendEmail(r.requester_email,r.requester_name,'Shift swap approved: '+ev.name,'Hi '+r.requester_name+',
+
+Your shift swap request for '+ev.name+' ('+ev.date+') has been approved. You have been removed from this shift.
+
+— The Shaken & Stirred Team');
+        if(r.swap_with_email) await sendEmail(r.swap_with_email,r.swap_with_name,'You've been added to a shift: '+ev.name,'Hi '+r.swap_with_name+',
+
+You have been added to '+ev.name+' ('+ev.date+') via a shift swap.
+
+— The Shaken & Stirred Team');
+      }
+    }
+  } else {
+    // Denied — notify requester
+    if(r.requester_email&&ev){
+      await sendEmail(r.requester_email,r.requester_name,'Shift request denied: '+ev.name,'Hi '+r.requester_name+',
+
+Your '+(r.request_type==='swap'?'swap':'give-up')+' request for '+ev.name+' ('+ev.date+') was not approved. Please reach out if you have questions.
+
+— The Shaken & Stirred Team');
+    }
+  }
+  await fetchAll(); render(); showToast(status==='approved'?'Request approved!':'Request denied.');
+}
+
+async function sendFullyStaffedEmails(eventId){
+  const ev=state.events.find(e=>e.id===eventId); if(!ev)return;
+  const bidders=state.bids.filter(b=>b.event_id===eventId&&b.staff_email);
+  const subject='Update: '+ev.name+' is now fully staffed';
+  const body='Hi,
+
+Just a heads up — '+ev.name+' ('+ev.date+') is now fully staffed.
+
+Thank you for your interest!
+
+— The Shaken & Stirred Team';
+  for(const b of bidders){
+    await sendEmail(b.staff_email,b.staff_name,subject,body);
+  }
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
