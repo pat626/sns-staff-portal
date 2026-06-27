@@ -766,25 +766,81 @@ function openStaffHoursModal(name){
   const totalMs=totalMsForStaff(name);
   const m=document.createElement('div');m.className='modal-bg';m.id='modal-staffhours';
   m.innerHTML=`<div class="modal">
-    <div class="modal-title"><span>${esc(name)}</span><button class="btn btn-sm" onclick="closeModal('modal-staffhours')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-title"><span>${esc(name)} — Hours</span><button class="btn btn-sm" onclick="closeModal('modal-staffhours')"><i class="ti ti-x"></i></button></div>
     <div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">${fmtHours(totalMs)}</span></div>
+    ${entries.length===0?`<div class="empty" style="padding:1rem"><i class="ti ti-clock-off"></i>No hours logged yet.</div>`:`
     <table class="hours-table">
-      <thead><tr><th>Event</th><th>Role</th><th>Date</th><th>Hours</th></tr></thead>
+      <thead><tr><th>Event</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead>
       <tbody>${entries.map(t=>{
         const ev=state.events.find(e=>e.id===t.event_id);
         const isIn=t.clocked_in&&!t.clocked_out;
         const ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
+        const hrs=(ms/3600000).toFixed(2);
         return`<tr>
           <td style="font-weight:500;color:var(--ss-cream)">${esc(ev?ev.name:t.event_id)}</td>
           <td>${t.role?roleBadge(t.role):''}</td>
           <td style="color:var(--ss-muted)">${ev?fmtDate(ev.date):''}</td>
           <td>${isIn?`<span class="badge badge-clocked">${fmtHours(ms)}</span>`:`<span style="color:var(--ss-gold-light);font-weight:500">${fmtHours(ms)}</span>`}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-sm" onclick="openEditHoursModal('${t.id}','${esc(name)}',${hrs})" style="margin-right:4px"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="deleteHoursEntry('${t.id}','${esc(name)}')"><i class="ti ti-trash"></i></button>
+          </td>
         </tr>`;
       }).join('')}</tbody>
-    </table>
+    </table>`}
     <div class="modal-actions"><button class="btn" onclick="closeModal('modal-staffhours')">Close</button></div>
   </div>`;
   document.body.appendChild(m);
+}
+
+function openEditHoursModal(entryId, staffName, currentHrs){
+  const t=state.timeEntries.find(te=>te.id===entryId); if(!t)return;
+  const ev=state.events.find(e=>e.id===t.event_id);
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-edithours';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Edit hours <button class="btn btn-sm" onclick="closeModal('modal-edithours')"><i class="ti ti-x"></i></button></div>
+    <div style="background:rgba(201,168,76,0.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem;font-size:13px">
+      <div style="font-weight:500;color:var(--ss-cream)">${esc(staffName)}</div>
+      <div style="color:var(--ss-muted);margin-top:2px">${ev?esc(ev.name)+' — '+fmtDate(ev.date):'Unknown event'}</div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Hours worked</label>
+        <input type="number" id="eh-hours" min="0" max="24" step="0.25" value="${Math.floor(currentHrs)}" placeholder="0"></div>
+      <div class="form-group"><label class="form-label">Minutes</label>
+        <input type="number" id="eh-mins" min="0" max="59" step="1" value="${Math.round((currentHrs % 1)*60)}" placeholder="0"></div>
+    </div>
+    <div style="font-size:11px;color:var(--ss-muted);margin-top:-0.5rem;margin-bottom:1rem">Enter the correct hours and minutes worked.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-edithours')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEditedHours('${entryId}','${esc(staffName)}')"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveEditedHours(entryId, staffName){
+  const hrs=parseFloat(document.getElementById('eh-hours').value)||0;
+  const mins=parseFloat(document.getElementById('eh-mins').value)||0;
+  const totalMs=Math.round((hrs*60+mins)*60000);
+  const {error}=await db.from('time_entries').update({
+    total_ms:totalMs, clocked_in:null, clocked_out:Date.now()
+  }).eq('id',entryId);
+  if(error){showToast('Error saving hours.',false);console.error(error);return;}
+  closeModal('modal-edithours');
+  closeModal('modal-staffhours');
+  await fetchAll(); render();
+  openStaffHoursModal(staffName);
+  showToast('Hours updated!');
+}
+
+async function deleteHoursEntry(entryId, staffName){
+  if(!confirm('Delete this hours entry? This cannot be undone.'))return;
+  const {error}=await db.from('time_entries').delete().eq('id',entryId);
+  if(error){showToast('Error deleting entry.',false);console.error(error);return;}
+  closeModal('modal-staffhours');
+  await fetchAll(); render();
+  openStaffHoursModal(staffName);
+  showToast('Hours entry deleted.');
 }
 
 function openSettings(){
