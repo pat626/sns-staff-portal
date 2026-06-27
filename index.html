@@ -1130,28 +1130,13 @@ async function submitShiftRequest(eventId){
   // Notify admin
   const ev=state.events.find(e=>e.id===eventId);
   if(ev){
-    const body=type==='swap'
-      ? 'Shift swap request from '+state.employeeName+' for '+ev.name+' ('+ev.date+').
-
-They want to swap with: '+swapName+(swapEmail?' ('+swapEmail+')':'')+'
-'+(reason?'Reason: '+reason+'
-':'')+'
-Log in to the staff portal to approve or deny.'
-      : 'Shift give-up request from '+state.employeeName+' for '+ev.name+' ('+ev.date+').
-
-'+(reason?'Reason: '+reason+'
-':'')+'
-Log in to the staff portal to approve or deny.';
+    const body = type==='swap'
+      ? 'Shift swap request from '+state.employeeName+' for '+ev.name+' ('+ev.date+'). They want to swap with: '+swapName+(swapEmail?' ('+swapEmail+')':'')+(reason?' Reason: '+reason:'.')+' Log in to the staff portal to approve or deny.'
+      : 'Shift give-up request from '+state.employeeName+' for '+ev.name+' ('+ev.date+').'+(reason?' Reason: '+reason:'.')+' Log in to the staff portal to approve or deny.';
     await sendEmail(ADMIN_EMAIL,'Pat',(type==='swap'?'Swap request: ':'Give-up request: ')+ev.name+' — '+state.employeeName, body);
     // Notify swap partner if swap
     if(type==='swap'&&swapEmail){
-      const swapBody='Hi '+swapName+',
-
-'+state.employeeName+' has requested to swap their shift on '+ev.name+' ('+ev.date+') with you.
-
-This swap is pending admin approval. You will be notified once a decision is made.
-
-— The Shaken & Stirred Team';
+      const swapBody='Hi '+swapName+', '+state.employeeName+' has requested to swap their shift on '+ev.name+' ('+ev.date+') with you. This swap is pending admin approval. You will be notified once a decision is made. — The Shaken & Stirred Team';
       await sendEmail(swapEmail,swapName,'Shift swap request: '+ev.name,swapBody);
     }
   }
@@ -1171,11 +1156,7 @@ async function resolveRequest(requestId, status){
       }
       // Notify employee
       if(r.requester_email&&ev){
-        await sendEmail(r.requester_email,r.requester_name,'Shift give-up approved: '+ev.name,'Hi '+r.requester_name+',
-
-Your request to give up your shift on '+ev.name+' ('+ev.date+') has been approved.
-
-— The Shaken & Stirred Team');
+        await sendEmail(r.requester_email,r.requester_name,'Shift give-up approved: '+ev.name,'Hi '+r.requester_name+', your request to give up your shift on '+ev.name+' ('+ev.date+') has been approved. — The Shaken & Stirred Team');
       }
     } else if(r.request_type==='swap'){
       // Deselect requester, select swap partner if they have a bid, else create one
@@ -1189,26 +1170,14 @@ Your request to give up your shift on '+ev.name+' ('+ev.date+') has been approve
       }
       // Notify both parties
       if(ev){
-        if(r.requester_email) await sendEmail(r.requester_email,r.requester_name,'Shift swap approved: '+ev.name,'Hi '+r.requester_name+',
-
-Your shift swap request for '+ev.name+' ('+ev.date+') has been approved. You have been removed from this shift.
-
-— The Shaken & Stirred Team');
-        if(r.swap_with_email) await sendEmail(r.swap_with_email,r.swap_with_name,'You've been added to a shift: '+ev.name,'Hi '+r.swap_with_name+',
-
-You have been added to '+ev.name+' ('+ev.date+') via a shift swap.
-
-— The Shaken & Stirred Team');
+        if(r.requester_email) await sendEmail(r.requester_email,r.requester_name,'Shift swap approved: '+ev.name,'Hi '+r.requester_name+', your shift swap request for '+ev.name+' ('+ev.date+') has been approved. You have been removed from this shift. — The Shaken & Stirred Team');
+        if(r.swap_with_email) await sendEmail(r.swap_with_email,r.swap_with_name,'You have been added to a shift: '+ev.name,'Hi '+r.swap_with_name+', you have been added to '+ev.name+' ('+ev.date+') via a shift swap. — The Shaken & Stirred Team');
       }
     }
   } else {
     // Denied — notify requester
     if(r.requester_email&&ev){
-      await sendEmail(r.requester_email,r.requester_name,'Shift request denied: '+ev.name,'Hi '+r.requester_name+',
-
-Your '+(r.request_type==='swap'?'swap':'give-up')+' request for '+ev.name+' ('+ev.date+') was not approved. Please reach out if you have questions.
-
-— The Shaken & Stirred Team');
+      await sendEmail(r.requester_email,r.requester_name,'Shift request denied: '+ev.name,'Hi '+r.requester_name+', your request for '+ev.name+' was not approved. Please reach out if you have questions. — The Shaken & Stirred Team');
     }
   }
   await fetchAll(); render(); showToast(status==='approved'?'Request approved!':'Request denied.');
@@ -1218,13 +1187,7 @@ async function sendFullyStaffedEmails(eventId){
   const ev=state.events.find(e=>e.id===eventId); if(!ev)return;
   const bidders=state.bids.filter(b=>b.event_id===eventId&&b.staff_email);
   const subject='Update: '+ev.name+' is now fully staffed';
-  const body='Hi,
-
-Just a heads up — '+ev.name+' ('+ev.date+') is now fully staffed.
-
-Thank you for your interest!
-
-— The Shaken & Stirred Team';
+  const body='Hi, just a heads up — '+ev.name+' ('+ev.date+') is now fully staffed. Thank you for your interest! — The Shaken & Stirred Team';
   for(const b of bidders){
     await sendEmail(b.staff_email,b.staff_name,subject,body);
   }
