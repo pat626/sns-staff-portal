@@ -225,11 +225,17 @@ const EVENT_TYPES = ['Corporate','Private Party','Wedding','Cocktail Reception',
 const ROLES = ['Server','Bartender','Chef'];
 
 const ADMIN_EMAIL = 'Pat@forkhospitality.com';
+const REVIEW_EMAILS = [
+  {name:'Pat', email:'Pat@forkhospitality.com'},
+  {name:'Erick', email:'Erick@forkhospitality.com'},
+  {name:'Chef John', email:'chefjohn@forkhospitality.com'},
+  {name:'Matt', email:'matt@forkhospitality.com'},
+];
 
 let state = {
   view:'employee', adminLoggedIn:false, adminSession:null,
   employeeName:'', employeeEmail:'',
-  events:[], bids:[], timeEntries:[], shiftRequests:[], timeclockEntries:[], staffDirectory:[], adminShowPast:false,
+  events:[], bids:[], timeEntries:[], shiftRequests:[], timeclockEntries:[], staffDirectory:[], eventReviews:[], adminShowPast:false, reviewingEventId:null,
   dateFilter:'upcoming', adminTab:'events',
   ejsServiceId:'service_vcgm7pc', ejsTemplateId:'template_qj4q1fi', ejsPublicKey:'6iPAaWxrM1Qxr5m5-'
 };
@@ -269,13 +275,14 @@ async function sendEmail(toEmail,toName,subject,body){
 
 // ── Supabase data fetchers ──
 async function fetchAll(){
-  const [evRes, bidRes, teRes, srRes, tcRes, sdRes] = await Promise.all([
+  const [evRes, bidRes, teRes, srRes, tcRes, sdRes, erRes] = await Promise.all([
     db.from('events').select('*').order('date', {ascending:true}),
     db.from('bids').select('*'),
     db.from('time_entries').select('*'),
     db.from('shift_requests').select('*').order('created_at', {ascending:false}),
     db.from('timeclock').select('*').order('clocked_in', {ascending:false}),
-    db.from('staff_directory').select('*').order('name', {ascending:true})
+    db.from('staff_directory').select('*').order('name', {ascending:true}),
+    db.from('event_reviews').select('*').order('created_at', {ascending:false})
   ]);
   if(evRes.error) console.error('Events fetch error:', evRes.error);
   if(bidRes.error) console.error('Bids fetch error:', bidRes.error);
@@ -283,12 +290,14 @@ async function fetchAll(){
   if(srRes.error) console.error('ShiftRequests fetch error:', srRes.error);
   if(tcRes.error) console.error('Timeclock fetch error:', tcRes.error);
   if(sdRes.error) console.error('StaffDirectory fetch error:', sdRes.error);
+  if(erRes.error) console.error('EventReviews fetch error:', erRes.error);
   state.events = evRes.data || [];
   state.bids = bidRes.data || [];
   state.timeEntries = teRes.data || [];
   state.shiftRequests = srRes.data || [];
   state.timeclockEntries = tcRes.data || [];
   state.staffDirectory = (sdRes.data || []).filter(s=>s.active);
+  state.eventReviews = erRes.data || [];
 }
 
 // ── Auth ──
@@ -419,8 +428,9 @@ function renderAdmin(){
     <button class="tab ${state.adminTab==='hours'?'active':''}" onclick="setAdminTab('hours')"><i class="ti ti-clock"></i> Hours</button>
     <button class="tab ${state.adminTab==='requests'?'active':''}" onclick="setAdminTab('requests')"><i class="ti ti-arrows-exchange"></i> Requests${pendingCount>0?' <span style="background:var(--fill-danger);color:var(--on-danger);border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pendingCount+'</span>':''}</button>
     <button class="tab ${state.adminTab==='staff'?'active':''}" onclick="setAdminTab('staff')"><i class="ti ti-users"></i> Staff</button>
+    <button class="tab ${state.adminTab==='reviews'?'active':''}" onclick="setAdminTab('reviews')"><i class="ti ti-clipboard-check"></i> Reviews</button>
   </div>
-  ${state.adminTab==='events'?renderAdminEvents():state.adminTab==='hours'?renderAdminHours():state.adminTab==='requests'?renderAdminRequests():renderAdminStaff()}`;
+  ${state.adminTab==='events'?renderAdminEvents():state.adminTab==='hours'?renderAdminHours():state.adminTab==='requests'?renderAdminRequests():state.adminTab==='staff'?renderAdminStaff():renderAdminReviews()}`;
 }
 
 function renderAdminLogin(){
@@ -535,6 +545,121 @@ function renderAdminRequests(){
   ${resolved.length>0?`
   <div style="font-size:10px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:0.1em;margin:1.25rem 0 0.75rem">Resolved</div>
   ${resolved.map(renderRequest).join('')}`:''}`;
+}
+
+function starDisplay(val, max=5){
+  if(!val) return '<span style="color:var(--ss-muted);font-size:12px">Not rated</span>';
+  let s='';
+  for(let i=1;i<=max;i++) s+=`<i class="ti ti-star" aria-hidden="true" style="font-size:14px;color:${i<=val?'var(--ss-gold)':'var(--ss-muted)'}"></i>`;
+  return s;
+}
+
+function renderAdminReviews(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const pastEvents=state.events.filter(e=>e.date&&new Date(e.date+'T00:00:00')<today);
+  const reviews=state.eventReviews||[];
+
+  // If reviewing a specific event
+  if(state.reviewingEventId){
+    const ev=state.events.find(e=>e.id===state.reviewingEventId);
+    const existing=reviews.find(r=>r.event_id===state.reviewingEventId);
+    return renderReviewForm(ev, existing);
+  }
+
+  return`
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+    <div class="section-title">Post-event reviews</div>
+    <button class="btn btn-sm" onclick="adminLogout()"><i class="ti ti-logout"></i> Sign out</button>
+  </div>
+  <div class="divider-line"></div>
+  ${pastEvents.length===0?`<div class="empty"><i class="ti ti-clipboard-check"></i>No past events to review yet.</div>`:`
+  <div style="display:flex;flex-direction:column;gap:10px">
+    ${pastEvents.map(e=>{
+      const review=reviews.find(r=>r.event_id===e.id);
+      return`<div class="event-card" style="border-left:3px solid ${review?'var(--ss-gold-dim)':'var(--ss-border)'}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div>
+            ${e.type?`<span class="event-type-tag" style="margin-bottom:5px;display:inline-flex">${esc(e.type)}</span><br>`:''}
+            <div class="event-name">${esc(e.name)}</div>
+            <div style="font-size:12px;color:var(--ss-muted);margin-top:3px">${fmtDate(e.date)}</div>
+          </div>
+          ${review?`<span class="badge badge-filled"><i class="ti ti-check"></i> Reviewed</span>`:`<span class="badge badge-closed">No review</span>`}
+        </div>
+        ${review?`<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ss-muted)">
+          <span><i class="ti ti-star" style="color:var(--ss-gold);vertical-align:-1px;font-size:13px"></i> Overall: ${review.overall_rating||'—'}/5</span>
+          <span>Food: ${review.food_quality||'—'}/5</span>
+          <span>Staff: ${review.staff_performance||'—'}/5</span>
+          <span>Client: ${review.client_satisfaction||'—'}/5</span>
+        </div>`:''}
+        <div class="card-actions">
+          <button class="btn btn-sm ${review?'':'btn-gold'}" onclick="state.reviewingEventId='${e.id}';render()">
+            <i class="ti ti-${review?'edit':'clipboard-check'}"></i> ${review?'Edit review':'Write review'}
+          </button>
+          ${review?`<button class="btn btn-sm btn-danger" onclick="deleteReview('${review.id}')"><i class="ti ti-trash"></i></button>`:''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`}`;
+}
+
+function renderReviewForm(ev, existing){
+  const v=existing||{};
+  const ratingRow=(label, field, placeholder)=>`
+    <div class="rating-block" style="margin-bottom:10px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px">
+        <div style="font-size:13px;color:var(--ss-text)">${label}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="stars" id="stars-${field}">
+            ${[1,2,3,4,5].map(n=>`<span class="rstar" data-field="${field}" data-val="${n}" onclick="rateReview('${field}',${n})" style="font-size:18px;cursor:pointer;color:${v[field]&&n<=v[field]?'var(--ss-gold)':'var(--ss-muted)'}"><i class="ti ti-star" aria-hidden="true"></i></span>`).join('')}
+          </div>
+          <button class="btn btn-sm" onclick="toggleReviewNotes('${field}')" style="font-size:11px;padding:3px 8px"><i class="ti ti-notes" aria-hidden="true"></i> Notes</button>
+        </div>
+      </div>
+      <div id="rnotes-${field}" style="display:none;padding:0 14px 12px">
+        <textarea id="rtxt-${field}" placeholder="${placeholder}" style="font-family:'Inter',sans-serif;font-size:12px;padding:7px 10px;border:1px solid var(--ss-border);border-radius:4px;background:var(--ss-surface);color:var(--ss-text);width:100%;min-height:60px;resize:vertical">${esc(v[field+'_notes']||'')}</textarea>
+      </div>
+    </div>`;
+
+  return`
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">
+    <button class="btn btn-sm" onclick="state.reviewingEventId=null;render()"><i class="ti ti-arrow-left"></i> Back</button>
+    <div class="section-title" style="font-size:16px">${esc(ev?ev.name:'Event')}</div>
+  </div>
+  <div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">${ev?fmtDate(ev.date):''} ${ev&&ev.location?'· '+esc(ev.location):''}</div>
+  <div class="divider-line"></div>
+
+  <div class="form-group">
+    <label class="form-label">Reviewed by</label>
+    <input type="text" id="r-reviewer" value="${esc(v.reviewer_name||'Pat')}" style="max-width:220px">
+  </div>
+
+  <div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">Ratings</div>
+  <div id="review-overall-score" style="text-align:center;padding:12px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;margin-bottom:12px">
+    <div style="font-family:'Playfair Display',serif;font-size:32px;color:var(--ss-gold-light)" id="r-avg-display">${existing?((((existing.overall_rating||0)+(existing.food_quality||0)+(existing.staff_performance||0)+(existing.client_satisfaction||0))/[existing.overall_rating,existing.food_quality,existing.staff_performance,existing.client_satisfaction].filter(Boolean).length)||0).toFixed(1):'—'}</div>
+    <div style="font-size:11px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">Overall score</div>
+  </div>
+
+  ${ratingRow('Overall event','overall','What made this event stand out, or fall short?')}
+  ${ratingRow('Food quality','food_quality','Comments on presentation, taste, temperature, portions…')}
+  ${ratingRow('Staff performance','staff_performance','Notes on punctuality, professionalism, teamwork…')}
+  ${ratingRow('Client satisfaction','client_satisfaction','How did the client respond? Any feedback they shared?')}
+
+  <div class="divider-line"></div>
+  <div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">Notes</div>
+
+  <div class="form-group">
+    <label class="form-label">Issues that arose</label>
+    <textarea id="r-issues" placeholder="Describe any problems, delays, or challenges…">${esc(v.issues||'')}</textarea>
+  </div>
+  <div class="form-group">
+    <label class="form-label">General notes</label>
+    <textarea id="r-notes" placeholder="Overall impressions, things that went well, suggestions for next time…">${esc(v.general_notes||'')}</textarea>
+  </div>
+
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--ss-border)">
+    <button class="btn" onclick="state.reviewingEventId=null;render()">Cancel</button>
+    <button class="btn btn-gold" onclick="submitReview('${ev?ev.id:''}','${existing?existing.id:''}')"><i class="ti ti-check"></i> ${existing?'Update review':'Submit review'}</button>
+  </div>`;
 }
 
 function renderAdminStaff(){
@@ -760,13 +885,17 @@ function openBidsModal(eventId){
     <div class="bids-list" style="margin-bottom:0.75rem">
       ${bids.length===0?`<div style="font-size:12px;color:var(--ss-muted);padding:6px 0">No bids yet.</div>`:''}
       ${bids.map(b=>`<div class="bid-item ${b.selected?'selected':''}">
-        <div style="min-width:0">
-          <div class="bid-name">${esc(b.staff_name)}</div>
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <div class="bid-name">${esc(b.staff_name)}</div>
+            ${roleBadge(b.role)}
+          </div>
           ${b.staff_email?`<div class="bid-meta"><i class="ti ti-mail" style="font-size:11px"></i>${esc(b.staff_email)}</div>`:''}
           ${b.note?`<div class="bid-note">"${esc(b.note)}"</div>`:''}
           ${b.selected?`<div class="my-shift-note" style="margin-top:4px"><i class="ti ti-star"></i> Selected</div>`:''}
         </div>
-        <div style="display:flex;gap:5px;flex-shrink:0">
+        <div style="display:flex;gap:5px;flex-shrink:0;align-items:flex-start">
+          <button class="btn btn-sm" onclick="openEditBidRoleModal('${b.id}','${esc(b.staff_name)}','${b.role||''}','${eventId}')" title="Change role"><i class="ti ti-edit"></i></button>
           ${b.selected
             ?`<button class="btn btn-sm" onclick="deselectBid('${b.id}','${eventId}')">Remove</button>`
             :`<button class="btn btn-sm btn-success" onclick="selectBid('${b.id}','${eventId}','${role}',${needs})"><i class="ti ti-check"></i> Pick</button>`}
@@ -1767,6 +1896,161 @@ async function clearPastEvents(){
   if(error){showToast('Error deleting past events.',false);console.error(error);return;}
   state.adminShowPast=false;
   await fetchAll(); render(); showToast(pastEvents.length+' past event'+(pastEvents.length!==1?'s':'')+' deleted.');
+}
+
+// ── Review helpers ──
+const reviewRatings={overall:0,food_quality:0,staff_performance:0,client_satisfaction:0};
+
+function rateReview(field, val){
+  reviewRatings[field]=val;
+  const starsEl=document.getElementById('stars-'+field);
+  if(starsEl) starsEl.querySelectorAll('.rstar').forEach(s=>{
+    s.style.color=parseInt(s.dataset.val)<=val?'var(--ss-gold)':'var(--ss-muted)';
+  });
+  updateReviewAvg();
+  // auto-open notes
+  const notesEl=document.getElementById('rnotes-'+field);
+  if(notesEl&&notesEl.style.display==='none') toggleReviewNotes(field);
+}
+
+function toggleReviewNotes(field){
+  const el=document.getElementById('rnotes-'+field);
+  if(!el) return;
+  const isOpen=el.style.display!=='none';
+  el.style.display=isOpen?'none':'block';
+  if(!isOpen) setTimeout(()=>{const ta=el.querySelector('textarea');if(ta)ta.focus();},50);
+}
+
+function updateReviewAvg(){
+  const vals=Object.values(reviewRatings).filter(v=>v>0);
+  const el=document.getElementById('r-avg-display');
+  if(!el) return;
+  el.textContent=vals.length?(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):'—';
+}
+
+async function submitReview(eventId, existingId){
+  const reviewer=(document.getElementById('r-reviewer')||{}).value?.trim()||'Admin';
+  const overall=reviewRatings.overall||parseInt((document.querySelector('[data-field="overall"].rstar[style*="gold"]')||{}).dataset?.val||0);
+  const foodQ=reviewRatings.food_quality||0;
+  const staffP=reviewRatings.staff_performance||0;
+  const clientS=reviewRatings.client_satisfaction||0;
+  const overallNotes=(document.getElementById('rtxt-overall')||{}).value?.trim()||'';
+  const foodNotes=(document.getElementById('rtxt-food_quality')||{}).value?.trim()||'';
+  const staffNotes=(document.getElementById('rtxt-staff_performance')||{}).value?.trim()||'';
+  const clientNotes=(document.getElementById('rtxt-client_satisfaction')||{}).value?.trim()||'';
+  const issues=(document.getElementById('r-issues')||{}).value?.trim()||'';
+  const notes=(document.getElementById('r-notes')||{}).value?.trim()||'';
+
+  const payload={
+    event_id:eventId, reviewer_name:reviewer,
+    overall_rating:overall||null, food_quality:foodQ||null,
+    staff_performance:staffP||null, client_satisfaction:clientS||null,
+    overall_notes:overallNotes||null, food_notes:foodNotes||null,
+    staff_notes:staffNotes||null, client_notes:clientNotes||null,
+    issues:issues||null, general_notes:notes||null
+  };
+
+  let error;
+  if(existingId){
+    ({error}=await db.from('event_reviews').update(payload).eq('id',existingId));
+  } else {
+    ({error}=await db.from('event_reviews').insert(payload));
+  }
+  if(error){showToast('Error saving review.',false);console.error(error);return;}
+
+  await fetchAll();
+  // Send email to review list
+  const ev=state.events.find(e=>e.id===eventId);
+  if(ev) await sendReviewEmails(ev, payload, reviewer);
+
+  state.reviewingEventId=null;
+  render();
+  showToast('Review '+(existingId?'updated':'submitted')+'!');
+}
+
+async function sendReviewEmails(ev, r, reviewer){
+  const stars=n=>n?'★'.repeat(n)+'☆'.repeat(5-n):'Not rated';
+  const body='Post-event review submitted for '+ev.name+' ('+ev.date+') by '+reviewer+'.
+
+'+
+    'RATINGS
+'+
+    'Overall: '+stars(r.overall_rating)+(r.overall_notes?'
+Notes: '+r.overall_notes:'')+'
+'+
+    'Food quality: '+stars(r.food_quality)+(r.food_notes?'
+Notes: '+r.food_notes:'')+'
+'+
+    'Staff performance: '+stars(r.staff_performance)+(r.staff_notes?'
+Notes: '+r.staff_notes:'')+'
+'+
+    'Client satisfaction: '+stars(r.client_satisfaction)+(r.client_notes?'
+Notes: '+r.client_notes:'')+'
+
+'+
+    (r.issues?'ISSUES
+'+r.issues+'
+
+':'')+
+    (r.general_notes?'GENERAL NOTES
+'+r.general_notes:'');
+  const subject='Post-event review: '+ev.name+' ('+ev.date+')';
+  for(const rec of REVIEW_EMAILS){
+    await sendEmail(rec.email, rec.name, subject, body);
+  }
+}
+
+async function deleteReview(reviewId){
+  if(!confirm('Delete this review? This cannot be undone.')) return;
+  const {error}=await db.from('event_reviews').delete().eq('id',reviewId);
+  if(error){showToast('Error deleting review.',false);return;}
+  await fetchAll(); render(); showToast('Review deleted.');
+}
+
+function openEditBidRoleModal(bidId, staffName, currentRole, eventId){
+  const ev=state.events.find(e=>e.id===eventId);
+  const availableRoles=[];
+  if(ev){
+    if(ev.servers_needed>0)availableRoles.push('Server');
+    if(ev.bartenders_needed>0)availableRoles.push('Bartender');
+    if(ev.chefs_needed>0)availableRoles.push('Chef');
+  }
+  if(!availableRoles.includes('Server'))availableRoles.push('Server');
+  if(!availableRoles.includes('Bartender'))availableRoles.push('Bartender');
+  if(!availableRoles.includes('Chef'))availableRoles.push('Chef');
+
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-edit-bid-role';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Change role <button class="btn btn-sm" onclick="closeModal('modal-edit-bid-role')"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div style="background:rgba(201,168,76,0.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem">
+      <div style="font-size:13px;font-weight:500;color:var(--ss-cream)">${esc(staffName)}</div>
+      <div style="font-size:11px;color:var(--ss-muted);margin-top:2px">${ev?esc(ev.name):''}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="ebr-role">
+        ${availableRoles.map(r=>`<option value="${r}" ${r===currentRole?'selected':''}>${r}</option>`).join('')}
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-edit-bid-role')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEditedBidRole('${bidId}','${eventId}')"><i class="ti ti-check" aria-hidden="true"></i> Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function saveEditedBidRole(bidId, eventId){
+  const role=(document.getElementById('ebr-role')||{}).value;
+  if(!role){showToast('Please select a role.',false);return;}
+  const {error}=await db.from('bids').update({role}).eq('id',bidId);
+  if(error){showToast('Error updating role.',false);console.error(error);return;}
+  closeModal('modal-edit-bid-role');
+  await fetchAll();
+  closeModal('modal-bids');
+  openBidsModal(eventId);
+  render();
+  showToast('Role updated!');
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
