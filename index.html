@@ -497,6 +497,7 @@ function renderAdminEvents(){
           <button class="btn btn-sm" onclick="openBidsModal('${e.id}')"><i class="ti ti-list"></i> Bids</button>
           <button class="btn btn-sm" onclick="openEventHoursModal('${e.id}')"><i class="ti ti-clock"></i> Hours</button>
           <button class="btn btn-sm" onclick="openEditModal('${e.id}')"><i class="ti ti-edit"></i> Edit</button>
+          <button class="btn btn-sm" onclick="manualRecheckStatus('${e.id}')"><i class="ti ti-refresh"></i></button>
           <button class="btn btn-sm" onclick="toggleStatus('${e.id}','${e.status||'open'}')">${!e.status||e.status==='open'?'Close':'Reopen'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteEvent('${e.id}')"><i class="ti ti-trash"></i></button>
         </div>
@@ -2022,10 +2023,35 @@ async function saveEditedBidRole(bidId, eventId){
   if(error){showToast('Error updating role.',false);console.error(error);return;}
   closeModal('modal-edit-bid-role');
   await fetchAll();
+  await recheckEventStatus(eventId);
+  await fetchAll();
   closeModal('modal-bids');
   openBidsModal(eventId);
   render();
   showToast('Role updated!');
+}
+
+async function manualRecheckStatus(eventId){
+  await fetchAll();
+  await recheckEventStatus(eventId);
+  await fetchAll();
+  render();
+  showToast('Status updated!');
+}
+
+async function recheckEventStatus(eventId){
+  const e=state.events.find(ev=>ev.id===eventId); if(!e) return;
+  const serversFilled=state.bids.filter(b=>b.event_id===eventId&&b.role==='Server'&&b.selected).length;
+  const bartsFilled=state.bids.filter(b=>b.event_id===eventId&&b.role==='Bartender'&&b.selected).length;
+  const chefsFilled=state.bids.filter(b=>b.event_id===eventId&&b.role==='Chef'&&b.selected).length;
+  const allFilled=(serversFilled>=(e.servers_needed||0))&&(bartsFilled>=(e.bartenders_needed||0))&&(chefsFilled>=(e.chefs_needed||0));
+  const totalSelected=state.bids.filter(b=>b.event_id===eventId&&b.selected).length;
+  let newStatus=e.status;
+  if(allFilled&&totalSelected>0) newStatus='filled';
+  else if(e.status==='filled') newStatus='open';
+  if(newStatus!==e.status){
+    await db.from('events').update({status:newStatus}).eq('id',eventId);
+  }
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
