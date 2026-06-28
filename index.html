@@ -1969,20 +1969,10 @@ async function submitReview(eventId, existingId){
 }
 
 async function sendReviewEmails(ev, r, reviewer){
-  const stars=n=>n?'★'.repeat(n)+'☆'.repeat(5-n):'Not rated';
-  const line=(label,rating,notes)=>label+': '+stars(rating)+(notes?'\nNotes: '+notes:'');
-  const body='Post-event review submitted for '+ev.name+' ('+ev.date+') by '+reviewer+'.\n\n'+
-    'RATINGS\n'+
-    line('Overall',r.overall_rating,r.overall_notes)+'\n'+
-    line('Food quality',r.food_quality,r.food_notes)+'\n'+
-    line('Staff performance',r.staff_performance,r.staff_notes)+'\n'+
-    line('Client satisfaction',r.client_satisfaction,r.client_notes)+
-    (r.issues?'\n\nISSUES\n'+r.issues:'')+
-    (r.general_notes?'\n\nGENERAL NOTES\n'+r.general_notes:'');
-  const subject='Post-event review: '+ev.name+' ('+ev.date+')';
-  for(const rec of REVIEW_EMAILS){
-    await sendEmail(rec.email, rec.name, subject, body);
-  }
+  function ratingLine(label,rating,notes){var s=rating?rating+'/5':'Not rated';return label+': '+s+(notes?'\nNotes: '+notes:'');}
+  var body='Post-event review submitted for '+ev.name+' ('+ev.date+') by '+reviewer+'.\n\nRATINGS\n'+ratingLine('Overall',r.overall_rating,r.overall_notes)+'\n'+ratingLine('Food quality',r.food_quality,r.food_notes)+'\n'+ratingLine('Staff performance',r.staff_performance,r.staff_notes)+'\n'+ratingLine('Client satisfaction',r.client_satisfaction,r.client_notes)+(r.issues?'\n\nISSUES\n'+r.issues:'')+(r.general_notes?'\n\nGENERAL NOTES\n'+r.general_notes:'');
+  var subject='Post-event review: '+ev.name+' ('+ev.date+')';
+  for(var ri=0;ri<REVIEW_EMAILS.length;ri++){await sendEmail(REVIEW_EMAILS[ri].email,REVIEW_EMAILS[ri].name,subject,body);}
 }
 
 async function deleteReview(reviewId){
