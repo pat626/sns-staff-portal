@@ -229,7 +229,7 @@ const ADMIN_EMAIL = 'Pat@forkhospitality.com';
 let state = {
   view:'employee', adminLoggedIn:false, adminSession:null,
   employeeName:'', employeeEmail:'',
-  events:[], bids:[], timeEntries:[], shiftRequests:[], timeclockEntries:[], staffDirectory:[],
+  events:[], bids:[], timeEntries:[], shiftRequests:[], timeclockEntries:[], staffDirectory:[], adminShowPast:false,
   dateFilter:'upcoming', adminTab:'events',
   ejsServiceId:'service_vcgm7pc', ejsTemplateId:'template_qj4q1fi', ejsPublicKey:'6iPAaWxrM1Qxr5m5-'
 };
@@ -445,18 +445,23 @@ function renderAdminLogin(){
 }
 
 function renderAdminEvents(){
-  const visible=filteredEvents(state.events);
+  const today=new Date(); today.setHours(0,0,0,0);
+  const upcomingEvents=state.events.filter(e=>!e.date||new Date(e.date+'T00:00:00')>=today);
+  const pastEvents=state.events.filter(e=>e.date&&new Date(e.date+'T00:00:00')<today);
+  const visible=state.adminShowPast?pastEvents:upcomingEvents;
   return`
   <div class="section-header">
-    <div class="section-title">Events <span style="font-size:13px;font-weight:400;color:var(--ss-muted)">(${visible.length})</span></div>
-    <div style="display:flex;gap:6px">
+    <div class="section-title">${state.adminShowPast?'Past Events':'Upcoming Events'} <span style="font-size:13px;font-weight:400;color:var(--ss-muted)">(${visible.length})</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="adminLogout()"><i class="ti ti-logout"></i> Sign out</button>
-      <button class="btn btn-gold" onclick="openCreateModal()"><i class="ti ti-plus"></i> Post event</button>
+      ${pastEvents.length>0?`<button class="btn btn-sm ${state.adminShowPast?'btn-gold':''}" onclick="togglePastEvents()"><i class="ti ti-history"></i> ${state.adminShowPast?'Show upcoming':'Past events ('+pastEvents.length+')'}</button>`:''}
+      ${state.adminShowPast&&pastEvents.length>0?`<button class="btn btn-sm btn-danger" onclick="clearPastEvents()"><i class="ti ti-trash"></i> Clear all past</button>`:''}
+      ${!state.adminShowPast?`<button class="btn btn-gold" onclick="openCreateModal()"><i class="ti ti-plus"></i> Post event</button>`:''}
     </div>
   </div>
   <div class="divider-line"></div>
-  ${filterBar()}
-  ${visible.length===0?`<div class="empty"><i class="ti ti-calendar-off"></i>No events match this filter.</div>`:''}
+  ${!state.adminShowPast?filterBar():''}
+  ${visible.length===0?`<div class="empty"><i class="ti ti-calendar-off"></i>${state.adminShowPast?'No past events found.':'No upcoming events. Post one to get started.'}</div>`:''}
   <div class="events-grid">
     ${visible.map(e=>{
       const eventBids=state.bids.filter(b=>b.event_id===e.id);
@@ -599,7 +604,8 @@ function renderEmployee(){
   const myPickedBids=myBids.filter(b=>b.selected);
   const myPickedEventIds=[...new Set(myPickedBids.map(b=>b.event_id))];
   const myPickedEvents=state.events.filter(e=>myPickedEventIds.includes(e.id));
-  const openEvents=filteredEvents(state.events.filter(e=>!e.status||e.status==='open'));
+  const today=new Date(); today.setHours(0,0,0,0);
+  const openEvents=filteredEvents(state.events.filter(e=>(!e.status||e.status==='open')&&(!e.date||new Date(e.date+'T00:00:00')>=today)));
   const totalMs=totalMsForStaff(state.employeeName);
   const activeClock=state.timeEntries.find(t=>t.staff_name===state.employeeName&&t.clocked_in&&!t.clocked_out);
 
@@ -1744,6 +1750,23 @@ async function sendNewEventNotifications(ev){
   }
   if(sent>0)showToast('Event posted! Notifications sent to '+sent+' staff member'+(sent!==1?'s':'')+'.', true);
   else showToast('Event posted — email notifications failed (check Settings).', false);
+}
+
+function togglePastEvents(){
+  state.adminShowPast = !state.adminShowPast;
+  render();
+}
+
+async function clearPastEvents(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const pastEvents=state.events.filter(e=>e.date&&new Date(e.date+'T00:00:00')<today);
+  if(!pastEvents.length){showToast('No past events to clear.',false);return;}
+  if(!confirm('Delete all '+pastEvents.length+' past event(s)? Their bids and hours will also be deleted. This cannot be undone.'))return;
+  const ids=pastEvents.map(e=>e.id);
+  const {error}=await db.from('events').delete().in('id',ids);
+  if(error){showToast('Error deleting past events.',false);console.error(error);return;}
+  state.adminShowPast=false;
+  await fetchAll(); render(); showToast(pastEvents.length+' past event'+(pastEvents.length!==1?'s':'')+' deleted.');
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
