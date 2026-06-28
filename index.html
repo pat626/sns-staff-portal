@@ -1735,18 +1735,11 @@ async function sendNewEventNotifications(ev){
     ev.bartenders_needed>0?'Bartenders needed: '+ev.bartenders_needed:'',
     ev.chefs_needed>0?'Chefs needed: '+ev.chefs_needed:'',
     ev.notes?'Notes: '+ev.notes:'',
-  ].filter(Boolean).join('
-');
+  ].filter(Boolean).join('\n');
   let sent=0;
   for(const s of staff){
-    const body='Hi '+s.name+', a new event has been posted on the Shaken & Stirred staff portal and is now open for bidding.
-
-'+details+'
-
-Log in to the staff portal to place your bid.
-
-— The Shaken & Stirred Team';
-    const ok=await sendEmail(s.email,s.name,subject,body);
+    const body='Hi '+s.name+', a new event has been posted on the Shaken & Stirred staff portal and is now open for bidding.\n\n'+details+'\n\nLog in to the staff portal to place your bid.\n\n— The Shaken & Stirred Team';
+        const ok=await sendEmail(s.email,s.name,subject,body);
     if(ok)sent++;
   }
   if(sent>0)showToast('Event posted! Notifications sent to '+sent+' staff member'+(sent!==1?'s':'')+'.', true);
