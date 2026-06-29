@@ -1,0 +1,25 @@
+{
+  "name": "Shaken & Stirred Staff Portal",
+  "short_name": "S&S Staff",
+  "description": "Staff scheduling, bidding, and time tracking for Shaken & Stirred Catered Events",
+  "start_url": "/sns-staff-portal/",
+  "scope": "/sns-staff-portal/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#12161f",
+  "theme_color": "#c9a84c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
