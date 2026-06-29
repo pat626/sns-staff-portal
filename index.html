@@ -498,6 +498,7 @@ function renderAdminEvents(){
           <button class="btn btn-sm" onclick="openEventHoursModal('${e.id}')"><i class="ti ti-clock"></i> Hours</button>
           <button class="btn btn-sm" onclick="openEditModal('${e.id}')"><i class="ti ti-edit"></i> Edit</button>
           <button class="btn btn-sm" onclick="manualRecheckStatus('${e.id}')"><i class="ti ti-refresh"></i></button>
+          <button class="btn btn-sm" onclick="resendEventNotification('${e.id}')" title="Resend notification to all staff"><i class="ti ti-send"></i></button>
           <button class="btn btn-sm" onclick="toggleStatus('${e.id}','${e.status||'open'}')">${!e.status||e.status==='open'?'Close':'Reopen'}</button>
           <button class="btn btn-sm btn-danger" onclick="deleteEvent('${e.id}')"><i class="ti ti-trash"></i></button>
         </div>
@@ -1103,8 +1104,8 @@ async function postNewEvent(){
   }
   closeModal('modal-create');
   await fetchAll();
-  // Send notifications to all staff in directory
-  const newEvent=state.events[0];
+  // Send notifications using the returned event ID
+  const newEvent=data&&data[0]?data[0]:null;
   if(newEvent) await sendNewEventNotifications(newEvent);
   else showToast('Event posted!');
   render();
@@ -2052,6 +2053,14 @@ async function recheckEventStatus(eventId){
   if(newStatus!==e.status){
     await db.from('events').update({status:newStatus}).eq('id',eventId);
   }
+}
+
+async function resendEventNotification(eventId){
+  const ev=state.events.find(e=>e.id===eventId); if(!ev)return;
+  const staff=state.staffDirectory||[];
+  if(!staff.length){showToast('No staff in directory to notify.',false);return;}
+  if(!confirm('Resend event notification to all '+staff.length+' staff member'+(staff.length!==1?'s':'')+' for "'+ev.name+'"?'))return;
+  await sendNewEventNotifications(ev);
 }
 
 function closeModal(id){const m=document.getElementById(id);if(m)m.remove();}
