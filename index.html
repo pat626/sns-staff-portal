@@ -35,9 +35,10 @@
   --ss-text:#f0ebe0;
   --ss-muted:#8a8270;
 }
-html,body{min-height:100vh;background:var(--ss-navy);color:var(--ss-text);font-family:'Inter',system-ui,sans-serif}
+html,body{min-height:100vh;min-height:-webkit-fill-available;background:var(--ss-navy);color:var(--ss-text);font-family:'Inter',system-ui,sans-serif}
+body{padding-bottom:env(safe-area-inset-bottom)}
 
-.topbar{background:var(--ss-black);border-bottom:1px solid var(--ss-border-gold);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:58px;gap:12px;position:sticky;top:0;z-index:50}
+.topbar{background:var(--ss-black);border-bottom:1px solid var(--ss-border-gold);padding:0 1.5rem;padding-left:max(1.5rem, env(safe-area-inset-left));padding-right:max(1.5rem, env(safe-area-inset-right));display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:50;height:calc(58px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
 .brand{display:flex;align-items:center;gap:10px}
 .brand-icon svg{width:28px;height:28px;display:block}
 .brand-name{font-family:'Playfair Display',serif;font-size:16px;font-weight:500;color:var(--ss-gold);letter-spacing:0.02em;line-height:1.1}
@@ -61,7 +62,7 @@ html,body{min-height:100vh;background:var(--ss-navy);color:var(--ss-text);font-f
 .btn-clockout{background:rgba(192,57,43,0.12);color:#e57373;border-color:rgba(229,115,115,0.35);font-weight:500}
 .btn-clockout:hover{background:rgba(192,57,43,0.22)}
 
-.main{padding:1.5rem;max-width:980px;margin:0 auto}
+.main{padding:1.5rem;padding-bottom:max(1.5rem, env(safe-area-inset-bottom));max-width:980px;margin:0 auto}
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px}
 .section-title{font-family:'Playfair Display',serif;font-size:20px;font-weight:500;color:var(--ss-gold-light)}
 .divider-line{height:1px;background:linear-gradient(90deg,var(--ss-gold-dim),transparent);margin-bottom:1.25rem}
