@@ -1286,7 +1286,7 @@ function fmtWeekLabel(monday) {
 }
 
 function exportWeeklyReport(){
-  if(!state.timeEntries.length){showToast('No hours to export.',false);return;}
+  if(!state.timeEntries.length&&!(state.timeclockEntries||[]).length){showToast('No hours to export.',false);return;}
   const weekMap = {};
   state.timeEntries.forEach(t => {
     const ev = state.events.find(e => e.id === t.event_id);
