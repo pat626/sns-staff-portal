@@ -1644,8 +1644,11 @@ function renderTimeclock(){
 
       ${activeEntry
         ?`<button class="tc-btn tc-btn-out" id="tc-btn-out" onclick="tcPunchOut('${activeEntry.id}','${esc(activeEntry.staff_name)}')"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out — ${esc(activeEntry.staff_name)}</button>`
-        :`<button class="tc-btn tc-btn-in" id="tc-btn-in" onclick="tcPunchIn()" disabled><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>`}
-      <div class="tc-punch-note" id="tc-punch-note">${activeEntry?'Tap Clock out when your shift ends':'Type your name above then tap Clock in'}</div>
+        :`<div style="display:flex;gap:8px">
+          <button class="tc-btn tc-btn-in" id="tc-btn-in" onclick="tcPunchIn()" disabled style="flex:1"><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>
+          <button class="tc-btn" id="tc-btn-drop" onclick="tcDrop()" disabled style="flex:1;background:rgba(201,168,76,0.12);color:var(--ss-gold);border:1px solid rgba(201,168,76,0.4);font-weight:500"><i class="ti ti-clock-plus" aria-hidden="true"></i> Drop (+3h)</button>
+        </div>`}
+      <div class="tc-punch-note" id="tc-punch-note">${activeEntry?'Tap Clock out when your shift ends':'Type your name above then tap Clock in or Drop'}</div>
 
       <div class="tc-hist-divider"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
@@ -1680,9 +1683,9 @@ function renderTimeclock(){
 function tcCheckName(){
   const name=(document.getElementById('tc-name-field')||{}).value?.trim();
   const btn=document.getElementById('tc-btn-in');
-  if(!btn)return;
-  if(name){btn.disabled=false;}
-  else{btn.disabled=true;}
+  const dropBtn=document.getElementById('tc-btn-drop');
+  if(btn){btn.disabled=!name;}
+  if(dropBtn){dropBtn.disabled=!name;}
 }
 
 async function tcPunchIn(){
@@ -1807,6 +1810,54 @@ async function saveEditedTimeclockEntry(entryId){
   if(error){showToast('Error saving entry.',false);console.error(error);return;}
   closeModal('modal-tc-edit');
   await fetchAll();render();showToast('Entry updated!');
+}
+
+function tcDrop(){
+  const name=(document.getElementById('tc-name-field')||{}).value?.trim();
+  if(!name){showToast('Please enter your name.',false);return;}
+  openDropModal(name);
+}
+
+function openDropModal(staffName){
+  const today=new Date().toISOString().split('T')[0];
+  const m=document.createElement('div');m.className='modal-bg';m.id='modal-drop';
+  m.innerHTML=`<div class="modal">
+    <div class="modal-title">Log drop shift <button class="btn btn-sm" onclick="closeModal('modal-drop')"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+    <div style="background:rgba(201,168,76,0.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem">
+      <div style="font-size:12px;color:var(--ss-muted);margin-bottom:2px">Staff member</div>
+      <div style="font-size:14px;font-weight:500;color:var(--ss-cream)">${esc(staffName)}</div>
+    </div>
+    <div class="form-group"><label class="form-label">Event name</label>
+      <input type="text" id="drop-event" placeholder="e.g. Smith Wedding, Yale Gala…"></div>
+    <div class="form-group"><label class="form-label">Date of drop</label>
+      <input type="date" id="drop-date" value="${today}"></div>
+    <div class="form-group"><label class="form-label">Notes <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>
+      <textarea id="drop-notes" placeholder="Any additional details…" style="min-height:60px"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('modal-drop')">Cancel</button>
+      <button class="btn btn-gold" onclick="submitDrop('${esc(staffName)}')"><i class="ti ti-clock-plus" aria-hidden="true"></i> Log 3h drop</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+
+async function submitDrop(staffName){
+  const eventName=(document.getElementById('drop-event')||{}).value?.trim();
+  const date=(document.getElementById('drop-date')||{}).value;
+  const notes=(document.getElementById('drop-notes')||{}).value?.trim();
+  if(!date){showToast('Please select a date.',false);return;}
+  const threeHoursMs=3*60*60*1000;
+  const clockedIn=new Date(date+'T12:00:00').getTime();
+  const clockedOut=clockedIn+threeHoursMs;
+  const noteStr='Drop — 3h'+(eventName?' | Event: '+eventName:'')+(notes?' | '+notes:'');
+  const {error}=await db.from('timeclock').insert({
+    staff_name:staffName, clocked_in:clockedIn,
+    clocked_out:clockedOut, total_ms:threeHoursMs,
+    note:noteStr
+  });
+  if(error){showToast('Error logging drop.',false);console.error(error);return;}
+  closeModal('modal-drop');
+  await fetchAll();render();showToast(staffName+' — 3h drop logged!');
 }
 
 async function deleteTimeclockEntry(entryId){
