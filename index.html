@@ -388,7 +388,13 @@ function filteredEvents(evs){
 }
 
 function filterBar(){
-  return`<div class="filter-bar">\n    <i class="ti ti-filter" style="color:var(--ss-muted);font-size:13px"></i>\n    ${[['upcoming','Upcoming'],['today','Today'],['week','This week'],['past','Past'],['all','All']].map(([k,l])=>\n      `<button class="filter-btn ${state.dateFilter===k?'active':''}" onclick="setFilter('${k}')">${l}</button>`).join('')}\n  </div>`;
+  var opts=[['upcoming','Upcoming'],['today','Today'],['week','This week'],['past','Past'],['all','All']];
+  var btns=opts.map(function(o){
+    var active=state.dateFilter===o[0]?'active':'';
+    var btn='<button class="filter-btn '+active+'" onclick="setFilter(''+o[0]+'')">'+o[1]+'</button>';
+    return btn;
+  }).join('');
+  return '<div class="filter-bar"><i class="ti ti-filter" style="color:var(--ss-muted);font-size:13px"></i>'+btns+'</div>';
 }
 
 function statusBadge(e){
