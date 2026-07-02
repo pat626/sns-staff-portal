@@ -995,54 +995,76 @@ function openEventHoursModal(eventId){
 }
 
 function openStaffHoursModal(name){
-  const myEm=(state.employeeEmail||'').toLowerCase().trim();
-  const entries=state.timeEntries.filter(t=>myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name);
-  const tcEntries=(state.timeclockEntries||[]).filter(t=>t.staff_name===name);
-  const totalMs=totalMsForStaff(name);
-  const m=document.createElement('div');
+  var myEm=(state.employeeEmail||'').toLowerCase().trim();
+  var entries=state.timeEntries.filter(function(t){return myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name;});
+  var tcEntries=(state.timeclockEntries||[]).filter(function(t){return t.staff_name===name;});
+  var totalMs=totalMsForStaff(name);
+  var m=document.createElement('div');
   m.className='modal-bg';
   m.id='modal-staffhours';
 
-  let rows='';
-  entries.forEach(t=>{
-    const ev=state.events.find(e=>e.id===t.event_id);
-    const isIn=t.clocked_in&&!t.clocked_out;
-    const ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
-    const hrs=(ms/3600000).toFixed(2);
-    rows+='<tr>'+
-      '<td style="font-weight:500;color:var(--ss-cream)">'+esc(ev?ev.name:t.event_id)+'</td>'+
-      '<td>'+(t.role?roleBadge(t.role):'')+'</td>'+
-      '<td style="color:var(--ss-muted)">'+(ev?fmtDate(ev.date):'')+'</td>'+
-      '<td>'+(isIn?'<span class="badge badge-clocked">'+fmtHours(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(ms)+'</span>')+'</td>'+
-      '<td style="white-space:nowrap">'+
-        '<button class="btn btn-sm" onclick="openEditHoursModal(''+t.id+'',''+esc(name)+'','+hrs+')" style="margin-right:4px"><i class="ti ti-edit" aria-hidden="true"></i></button>'+
-        '<button class="btn btn-sm btn-danger" onclick="deleteHoursEntry(''+t.id+'',''+esc(name)+'')"><i class="ti ti-trash" aria-hidden="true"></i></button>'+
-      '</td></tr>';
-  });
+  var html='<div class="modal">';
+  html+='<div class="modal-title"><span>'+esc(name)+' — Hours</span>';
+  html+='<button class="btn btn-sm" onclick="closeModal('modal-staffhours')"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  html+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(totalMs)+'</span></div>';
 
-  tcEntries.forEach(t=>{
-    const isIn=t.clocked_in&&!t.clocked_out;
-    const ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
-    const hrs=(ms/3600000).toFixed(2);
-    const isDrop=t.note&&t.note.startsWith('Drop');
-    const inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
-    const rawNote=t.note||'';
-    const displayNote=isDrop?rawNote.replace('Drop — 3h | ','').replace('Drop — 3h','').trim()||'Drop':rawNote||'Time clock';
-    const dropBadge=isDrop?'<span class="badge badge-picked" style="margin-right:6px;font-size:9px;vertical-align:middle">Drop</span>':'';
-    rows+='<tr>'+
-      '<td><div style="font-weight:500;color:var(--ss-cream)">'+dropBadge+esc(displayNote)+'</div></td>'+
-      '<td><span style="font-size:11px;color:var(--ss-muted)">Clock</span></td>'+
-      '<td style="color:var(--ss-muted)">'+inDate+'</td>'+
-      '<td>'+(isIn?'<span class="badge badge-clocked">'+fmtHours(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(ms)+'</span>')+'</td>'+
-      '<td style="white-space:nowrap">'+
-        '<button class="btn btn-sm btn-danger" onclick="deleteTimeclockEntry(''+t.id+'')"><i class="ti ti-trash" aria-hidden="true"></i></button>'+
-      '</td></tr>';
-  });
-
-  const table=rows?'<table class="hours-table"><thead><tr><th>Event / Note</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>':'<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
-
-  m.innerHTML='<div class="modal"><div class="modal-title"><span>'+esc(name)+' — Hours</span><button class="btn btn-sm" onclick="closeModal('modal-staffhours')"><i class="ti ti-x" aria-hidden="true"></i></button></div><div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(totalMs)+'</span></div>'+table+'<div class="modal-actions"><button class="btn" onclick="closeModal('modal-staffhours')">Close</button></div></div>';
+  var hasRows=entries.length>0||tcEntries.length>0;
+  if(!hasRows){
+    html+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
+  } else {
+    html+='<table class="hours-table"><thead><tr><th>Event / Note</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead><tbody>';
+    for(var i=0;i<entries.length;i++){
+      var t=entries[i];
+      var ev=state.events.find(function(e){return e.id===t.event_id;});
+      var isIn=t.clocked_in&&!t.clocked_out;
+      var ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
+      var hrs=(ms/3600000).toFixed(2);
+      html+='<tr>';
+      html+='<td style="font-weight:500;color:var(--ss-cream)">'+esc(ev?ev.name:t.event_id)+'</td>';
+      html+='<td>'+(t.role?roleBadge(t.role):'')+'</td>';
+      html+='<td style="color:var(--ss-muted)">'+(ev?fmtDate(ev.date):'')+'</td>';
+      if(isIn){html+='<td><span class="badge badge-clocked">'+fmtHours(ms)+'</span></td>';}
+      else{html+='<td><span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(ms)+'</span></td>';}
+      html+='<td style="white-space:nowrap">';
+      html+='<button class="btn btn-sm sns-edit-hrs" data-id="'+t.id+'" data-name="'+esc(name)+'" data-hrs="'+hrs+'" style="margin-right:4px"><i class="ti ti-edit" aria-hidden="true"></i></button>';
+      html+='<button class="btn btn-sm btn-danger sns-del-hrs" data-id="'+t.id+'" data-name="'+esc(name)+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
+      html+='</td></tr>';
+    }
+    for(var j=0;j<tcEntries.length;j++){
+      var tc=tcEntries[j];
+      var tcIsIn=tc.clocked_in&&!tc.clocked_out;
+      var tcMs=(tc.total_ms||0)+(tcIsIn?Date.now()-tc.clocked_in:0);
+      var isDrop=tc.note&&tc.note.startsWith('Drop');
+      var inDate=tc.clocked_in?new Date(tc.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
+      var rawNote=tc.note||'';
+      var displayNote=isDrop?rawNote.replace('Drop — 3h | ','').replace('Drop — 3h','').trim()||'Drop':rawNote||'Time clock';
+      html+='<tr>';
+      html+='<td><div style="font-weight:500;color:var(--ss-cream)">';
+      if(isDrop){html+='<span class="badge badge-picked" style="margin-right:6px;font-size:9px;vertical-align:middle">Drop</span>';}
+      html+=esc(displayNote)+'</div></td>';
+      html+='<td><span style="font-size:11px;color:var(--ss-muted)">Clock</span></td>';
+      html+='<td style="color:var(--ss-muted)">'+inDate+'</td>';
+      if(tcIsIn){html+='<td><span class="badge badge-clocked">'+fmtHours(tcMs)+'</span></td>';}
+      else{html+='<td><span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(tcMs)+'</span></td>';}
+      html+='<td style="white-space:nowrap">';
+      html+='<button class="btn btn-sm btn-danger sns-del-tc" data-id="'+tc.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
+      html+='</td></tr>';
+    }
+    html+='</tbody></table>';
+  }
+  html+='<div class="modal-actions"><button class="btn" onclick="closeModal('modal-staffhours')">Close</button></div>';
+  html+='</div>';
+  m.innerHTML=html;
   document.body.appendChild(m);
+  m.querySelectorAll('.sns-edit-hrs').forEach(function(btn){
+    btn.addEventListener('click',function(){openEditHoursModal(btn.dataset.id,btn.dataset.name,btn.dataset.hrs);});
+  });
+  m.querySelectorAll('.sns-del-hrs').forEach(function(btn){
+    btn.addEventListener('click',function(){deleteHoursEntry(btn.dataset.id,btn.dataset.name);});
+  });
+  m.querySelectorAll('.sns-del-tc').forEach(function(btn){
+    btn.addEventListener('click',function(){deleteTimeclockEntry(btn.dataset.id);});
+  });
 }
 
 function openEditHoursModal(entryId, staffName, currentHrs){
@@ -2207,10 +2229,7 @@ function waitForDeps(cb, attempts=0) {
 }
 
 waitForDeps(init);
-</script> 
+</script>
 
 </body>
 </html>
-
-
-
