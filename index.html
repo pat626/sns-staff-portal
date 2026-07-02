@@ -930,8 +930,7 @@ function openBidsModal(eventId){
     ${renderBidGroup('Server',e.servers_needed||0)}
     ${renderBidGroup('Bartender',e.bartenders_needed||0)}
     ${renderBidGroup('Chef',e.chefs_needed||0)}
-    <div class="modal-actions"><button class="btn" onclick="closeModal('modal-bids')">Done</button></div>
-  </div>`;
+    <div class="  html+='<div class="modal-actions"><button class="btn sns-close-hrs">Close</button></div>';
   document.body.appendChild(m);
 }
 
@@ -1005,7 +1004,7 @@ function openStaffHoursModal(name){
 
   var html='<div class="modal">';
   html+='<div class="modal-title"><span>'+esc(name)+' — Hours</span>';
-  html+='<button class="btn btn-sm" onclick="closeModal('modal-staffhours')"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  html+='<button class="btn btn-sm sns-close-hrs"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   html+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtHours(totalMs)+'</span></div>';
 
   var hasRows=entries.length>0||tcEntries.length>0;
@@ -1056,6 +1055,9 @@ function openStaffHoursModal(name){
   html+='</div>';
   m.innerHTML=html;
   document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-hrs').forEach(function(btn){
+    btn.addEventListener('click',function(){closeModal('modal-staffhours');});
+  });
   m.querySelectorAll('.sns-edit-hrs').forEach(function(btn){
     btn.addEventListener('click',function(){openEditHoursModal(btn.dataset.id,btn.dataset.name,btn.dataset.hrs);});
   });
