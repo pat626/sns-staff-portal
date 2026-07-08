@@ -312,7 +312,7 @@ function statusBadge(e){
 function roleBadge(role){
   if(!role)return '';
   var r=role.toLowerCase();
-  var cls=r==='server'?'role-server':r==='bartender'?'role-bartender':r==='delivery'?'role-delivery':'role-chef';
+  var cls=r==='server'?'role-server':r==='bartender'?'role-bartender':r==='delivery driver'?'role-delivery':'role-chef';
   return '<span class="bid-role-tag '+cls+'">'+esc(role)+'</span>';
 }
 
@@ -880,9 +880,12 @@ function lookupStaffByEmail(){
 }
 
 async function postNewEvent(){
-  var name=document.getElementById('c-name').value.trim();
+  var typeVal=document.getElementById('c-type').value||'';
+  var isDS=typeVal==='Drop & Set';
   var date=document.getElementById('c-date').value;
-  if(!name||!date){showToast('Name and date are required.',false);return;}
+  var name=document.getElementById('c-name').value.trim();
+  if(isDS&&!name){var d=date?new Date(date+'T12:00:00').toLocaleDateString([],{month:'short',day:'numeric'}):'';name='Drop & Set'+(d?' — '+d:'');}
+  if(!name||!date){showToast('Date is required.',false);return;}
   var payload={name:name,date:date,
     type:document.getElementById('c-type').value||null,
     start_time:document.getElementById('c-start').value||null,
@@ -1332,13 +1335,24 @@ function openSettings(){
 function openCreateModal(){
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-create';
   var h='<div class="modal"><div class="modal-title">Post New Event <button class="btn btn-sm sns-close-modal" data-modal="modal-create"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
-  h+='<div class="form-group"><label class="form-label">Event name</label><input type="text" id="c-name" placeholder="Smith Wedding\u2026"></div>';
+  h+='<div id="c-name-wrap" class="form-group"><label class="form-label">Event name</label><input type="text" id="c-name" placeholder="Smith Wedding\u2026"></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Event type</label><select id="c-type"><option value="">\u2014 Select \u2014</option>';
   EVENT_TYPES.forEach(function(t){h+='<option>'+t+'</option>';});
   h+='</select></div><div class="form-group"><label class="form-label">Guest count</label><input type="number" id="c-guests" min="0"></div></div>';
-  setTimeout(function(){var sel=document.getElementById('c-type');if(sel)sel.onchange=function(){var ds=document.getElementById('c-dropset-fields');if(ds)ds.style.display=this.value==='Drop & Set'?'block':'none';};},0);
+  setTimeout(function(){
+    var sel=document.getElementById('c-type');
+    if(sel)sel.onchange=function(){
+      var isDS=this.value==='Drop & Set';
+      var dsFields=document.getElementById('c-dropset-fields');
+      var nameField=document.getElementById('c-name-wrap');
+      var endField=document.getElementById('c-end-wrap');
+      if(dsFields)dsFields.style.display=isDS?'block':'none';
+      if(nameField)nameField.style.display=isDS?'none':'block';
+      if(endField)endField.style.display=isDS?'none':'block';
+    };
+  },0);
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="c-date"></div><div class="form-group"><label class="form-label">Start time</label><input type="time" id="c-start"></div></div>';
-  h+='<div class="form-row"><div class="form-group"><label class="form-label">End time</label><input type="time" id="c-end"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="c-loc"></div></div>';
+  h+='<div class="form-row"><div class="form-group" id="c-end-wrap"><label class="form-label">End time</label><input type="time" id="c-end"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="c-loc"></div></div>';
 h+='<div id="c-dropset-fields" style="display:none"><div class="form-row"><div class="form-group"><label class="form-label">Arrival time</label><input type="time" id="c-arrival"></div><div class="form-group"><label class="form-label">Address</label><input type="text" id="c-address" placeholder="123 Main St, City"></div></div></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">';
   h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Staff needed</div>';
@@ -1403,11 +1417,12 @@ function openBidsModal(eventId){
     gh+='</div>';return gh;
   }
   if(e.type==='Drop & Set'){
-    var deliveryBids=bids.filter(function(b){return b.role==='Delivery';});
-    if(deliveryBids.length){
-      var dh='<div style="font-size:11px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.08em;margin:1rem 0 .5rem;padding-bottom:6px;border-bottom:1px solid var(--ss-border)">Delivery &mdash; '+deliveryBids.filter(function(b){return b.selected;}).length+' selected</div>';
+    ['Delivery Driver'].forEach(function(dsRole){
+      var dsBids=bids.filter(function(b){return b.role===dsRole;});
+      if(!dsBids.length)return;
+      var dh='<div style="font-size:11px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.08em;margin:1rem 0 .5rem;padding-bottom:6px;border-bottom:1px solid var(--ss-border)">'+dsRole+' &mdash; '+dsBids.filter(function(b){return b.selected;}).length+' selected</div>';
       dh+='<div class="bids-list" style="margin-bottom:.75rem">';
-      deliveryBids.forEach(function(b){
+      dsBids.forEach(function(b){
         dh+='<div class="bid-item'+(b.selected?' selected':'')+'">';
         dh+='<div style="min-width:0"><div class="bid-name">'+esc(b.staff_name)+'</div>';
         if(b.staff_email)dh+='<div class="bid-meta"><i class="ti ti-mail" style="font-size:11px"></i> '+esc(b.staff_email)+'</div>';
@@ -1416,14 +1431,14 @@ function openBidsModal(eventId){
         dh+='</div><div style="display:flex;gap:5px;flex-shrink:0">';
         dh+='<button class="btn btn-sm sns-edit-bid-role" data-bid="'+b.id+'" data-name="'+esc(b.staff_name)+'" data-role="'+esc(b.role||'')+'" data-eid="'+eventId+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
         if(b.selected)dh+='<button class="btn btn-sm sns-deselect-bid" data-bid="'+b.id+'" data-eid="'+eventId+'">Remove</button>';
-        else dh+='<button class="btn btn-sm btn-success sns-select-bid" data-bid="'+b.id+'" data-eid="'+eventId+'" data-role="Delivery" data-needs="99"><i class="ti ti-check" aria-hidden="true"></i> Pick</button>';
+        else dh+='<button class="btn btn-sm btn-success sns-select-bid" data-bid="'+b.id+'" data-eid="'+eventId+'" data-role="'+dsRole+'" data-needs="99"><i class="ti ti-check" aria-hidden="true"></i> Pick</button>';
         dh+='</div></div>';
       });
       dh+='</div>';
       h+=dh;
-    }
+    });
   }
-  h+=renderBidGroup('Server',e.servers_needed||0);
+    h+=renderBidGroup('Server',e.servers_needed||0);
   h+=renderBidGroup('Bartender',e.bartenders_needed||0);
   h+=renderBidGroup('Chef',e.chefs_needed||0);
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-bids">Done</button></div></div>';
@@ -1438,7 +1453,7 @@ function openBidModal(eventId){
   var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;
   var roles=[];
   if(e.type==='Drop & Set'){
-    roles=['Delivery'];
+    roles=['Delivery Driver'];
     if(e.servers_needed>0)roles.push('Server');
     if(e.bartenders_needed>0)roles.push('Bartender');
     if(e.chefs_needed>0)roles.push('Chef');
