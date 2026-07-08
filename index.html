@@ -716,7 +716,7 @@ function updateTCClock(){
 }
 
 function renderTimeclock(){
-  var recent=(state.timeclockEntries||[]).slice(0,8);
+  var recent=(state.timeclockEntries||[]).slice(0,50);
   var activeEntry=recent.find(function(t){return t.clocked_in&&!t.clocked_out;});
   var tcName=document.getElementById('tc-name-field')?document.getElementById('tc-name-field').value:'';
   var h='<div class="tc-wrap"><div class="tc-card">';
@@ -737,23 +737,55 @@ function renderTimeclock(){
   h+='<div class="tc-divider"></div>';
   h+='<div class="tc-hist-title"><span style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em">Recent punches</span>';
   h+='<button class="btn btn-sm sns-tc-add" style="font-size:11px"><i class="ti ti-plus" aria-hidden="true"></i> Add entry</button></div>';
-  if(!recent.length)h+='<div style="font-size:13px;color:var(--ss-muted);padding:1rem 0;text-align:center">No punches yet.</div>';
-  recent.forEach(function(t){
-    var isA=t.clocked_in&&!t.clocked_out;
-    var ms=(t.total_ms||0)+(isA?Date.now()-t.clocked_in:0);
-    var inTime=t.clocked_in?new Date(t.clocked_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'--';
-    var outTime=t.clocked_out?new Date(t.clocked_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
-    var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric'}):'';
-    var isDrop=t.note&&t.note.startsWith('Drop');
-    h+='<div class="tc-hist-item"><div style="flex:1;min-width:0"><div class="tc-hi-name">'+esc(t.staff_name)+'</div>';
-    h+='<div class="tc-hi-time">'+inDate+' &middot; '+(isA?'Clocked in '+inTime:inTime+(outTime?' &ndash; '+outTime:''))+'</div></div>';
-    h+='<div style="display:flex;align-items:center;gap:6px">';
-    if(isA)h+='<span class="tc-hi-active">Active</span>';
-    else if(isDrop)h+='<span class="tc-hi-drop">Drop &middot; 3h</span>';
-    else h+='<span class="tc-hi-hrs">'+fmtH(ms)+'</span>';
-    h+='<button class="btn btn-sm sns-tc-edit" data-id="'+t.id+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
-    h+='<button class="btn btn-sm btn-danger sns-tc-del" data-id="'+t.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button></div></div>';
-  });
+  if(!recent.length){
+    h+='<div style="font-size:13px;color:var(--ss-muted);padding:1rem 0;text-align:center">No punches yet.</div>';
+  } else {
+    // Group by week, then by employee within each week
+    var weekGroups={};
+    var weekOrder=[];
+    recent.forEach(function(t){
+      var ts=t.clocked_in||Date.now();
+      var ws=getWeekStart(new Date(ts));
+      var wk=ws.toISOString().split('T')[0];
+      if(!weekGroups[wk]){weekGroups[wk]={label:fmtWeekLabel(ws),employees:{},empOrder:[],totalMs:0};weekOrder.push(wk);}
+      var ms=(t.total_ms||0)+((t.clocked_in&&!t.clocked_out)?Date.now()-t.clocked_in:0);
+      var empKey=t.staff_name;
+      if(!weekGroups[wk].employees[empKey]){weekGroups[wk].employees[empKey]={name:t.staff_name,entries:[],totalMs:0};weekGroups[wk].empOrder.push(empKey);}
+      weekGroups[wk].employees[empKey].entries.push(t);
+      weekGroups[wk].employees[empKey].totalMs+=ms;
+      weekGroups[wk].totalMs+=ms;
+    });
+    weekOrder.forEach(function(wk){
+      var grp=weekGroups[wk];
+      h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:1rem 0 6px">';
+      h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em">'+grp.label+'</div>';
+      h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+' total</div></div>';
+      h+='<div style="border-top:1px solid var(--ss-border-gold);margin-bottom:6px"></div>';
+      grp.empOrder.forEach(function(empKey){
+        var emp=grp.employees[empKey];
+        // Employee subheader with their weekly total
+        h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0 4px;margin-top:4px">';
+        h+='<div style="font-size:12px;font-weight:500;color:var(--ss-cream)">'+esc(emp.name)+'</div>';
+        h+='<div style="font-size:11px;color:var(--ss-gold-dim);font-weight:500">'+fmtH(emp.totalMs)+'</div></div>';
+        emp.entries.forEach(function(t){
+          var isA=t.clocked_in&&!t.clocked_out;
+          var ms=(t.total_ms||0)+(isA?Date.now()-t.clocked_in:0);
+          var inTime=t.clocked_in?new Date(t.clocked_in).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'--';
+          var outTime=t.clocked_out?new Date(t.clocked_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+          var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric'}):'';
+          var isDrop=t.note&&t.note.startsWith('Drop');
+          h+='<div class="tc-hist-item" style="padding-left:10px;border-left:2px solid var(--ss-border)">';
+          h+='<div style="flex:1;min-width:0"><div class="tc-hi-time" style="margin-top:0">'+inDate+' &middot; '+(isA?'Clocked in '+inTime:inTime+(outTime?' &ndash; '+outTime:''))+'</div></div>';
+          h+='<div style="display:flex;align-items:center;gap:6px">';
+          if(isA)h+='<span class="tc-hi-active">Active</span>';
+          else if(isDrop)h+='<span class="tc-hi-drop">Drop &middot; 3h</span>';
+          else h+='<span class="tc-hi-hrs">'+fmtH(ms)+'</span>';
+          h+='<button class="btn btn-sm sns-tc-edit" data-id="'+t.id+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
+          h+='<button class="btn btn-sm btn-danger sns-tc-del" data-id="'+t.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button></div></div>';
+        });
+      });
+    });
+  }
   h+='</div></div>';return h;
 }
 
