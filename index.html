@@ -1364,45 +1364,90 @@ function openStaffHoursModal(name){
   var entries=state.timeEntries.filter(function(t){return myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name;});
   var tcEntries=(state.timeclockEntries||[]).filter(function(t){return t.staff_name===name;});
   var totalMs=totalMsForStaff(name);
-  var m=document.createElement('div');m.className='modal-bg';m.id='modal-staffhours';
-  var h='<div class="modal"><div class="modal-title"><span>'+esc(name)+' \u2014 Hours</span><button class="btn btn-sm sns-close-modal" data-modal="modal-staffhours"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
-  h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(totalMs)+'</span></div>';
-  if(!entries.length&&!tcEntries.length){h+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';}
-  else{
-    h+='<table class="hours-table"><thead><tr><th>Event / Note</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead><tbody>';
-    entries.forEach(function(t,idx){
-      var ev=state.events.find(function(e){return e.id===t.event_id;});
-      var isIn=t.clocked_in&&!t.clocked_out;
-      var ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
-      var hrs=(ms/3600000).toFixed(2);
-      h+='<tr><td style="font-weight:500;color:var(--ss-cream)">'+esc(ev?ev.name:t.event_id)+'</td>';
-      h+='<td>'+(t.role?roleBadge(t.role):'')+'</td>';
-      h+='<td style="color:var(--ss-muted)">'+(ev?fmtDate(ev.date):'')+'</td>';
-      h+='<td>'+(isIn?'<span class="badge badge-clocked">'+fmtH(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(ms)+'</span>')+'</td>';
-      h+='<td style="white-space:nowrap"><button class="btn btn-sm sns-eh-edit" data-idx="'+idx+'" data-hrs="'+hrs+'" style="margin-right:4px"><i class="ti ti-edit" aria-hidden="true"></i></button>';
-      h+='<button class="btn btn-sm btn-danger sns-eh-del" data-idx="'+idx+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
-    });
-    tcEntries.forEach(function(t,idx){
-      var isIn=t.clocked_in&&!t.clocked_out;
-      var ms=(t.total_ms||0)+(isIn?Date.now()-t.clocked_in:0);
-      var isDrop=t.note&&t.note.startsWith('Drop');
-      var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
-      var rawNote=t.note||'';
-      var displayNote=isDrop?rawNote.replace('Drop \u2014 3h | ','').replace('Drop \u2014 3h','').trim()||'Drop':rawNote||'Time clock';
-      h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+(isDrop?'<span class="badge badge-picked" style="margin-right:6px;font-size:9px;vertical-align:middle">Drop</span>':'')+esc(displayNote)+'</div></td>';
-      h+='<td><span style="font-size:11px;color:var(--ss-muted)">Clock</span></td>';
-      h+='<td style="color:var(--ss-muted)">'+inDate+'</td>';
-      h+='<td>'+(isIn?'<span class="badge badge-clocked">'+fmtH(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(ms)+'</span>')+'</td>';
-      h+='<td style="white-space:nowrap"><button class="btn btn-sm btn-danger sns-tc-del-idx" data-idx="'+idx+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
-    });
-    h+='</tbody></table>';
+  var m=document.createElement('div');
+  m.className='modal-bg';
+  m.id='modal-staffhours';
+
+  // Build week groups combining both entry types
+  var weekGroups={};
+  var weekOrder=[];
+  function addToWeek(dateTs, entryObj){
+    var ws=getWeekStart(new Date(dateTs));
+    var wk=ws.toISOString().split('T')[0];
+    if(!weekGroups[wk]){weekGroups[wk]={label:fmtWeekLabel(ws),entries:[],totalMs:0};weekOrder.push(wk);}
+    var ms=(entryObj.total_ms||0)+((entryObj.clocked_in&&!entryObj.clocked_out)?Date.now()-entryObj.clocked_in:0);
+    weekGroups[wk].entries.push({entry:entryObj,ms:ms,type:entryObj.event_id?'event':'clock'});
+    weekGroups[wk].totalMs+=ms;
   }
+  entries.forEach(function(t){
+    var ev=state.events.find(function(e){return e.id===t.event_id;});
+    var dateTs=ev?new Date(ev.date+'T12:00:00').getTime():(t.clocked_in||Date.now());
+    addToWeek(dateTs,t);
+  });
+  tcEntries.forEach(function(t){
+    addToWeek(t.clocked_in||Date.now(),t);
+  });
+
+  var h='<div class="modal"><div class="modal-title"><span>'+esc(name)+' — Hours</span>';
+  h+='<button class="btn btn-sm sns-close-modal" data-modal="modal-staffhours"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(totalMs)+'</span></div>';
+
+  if(!entries.length&&!tcEntries.length){
+    h+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
+  } else {
+    weekOrder.forEach(function(wk){
+      var grp=weekGroups[wk];
+      // Week header
+      h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:1rem 0 6px">';
+      h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em">'+grp.label+'</div>';
+      h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+' total</div></div>';
+      h+='<div style="border-top:1px solid var(--ss-border-gold);margin-bottom:6px"></div>';
+      // Entries for this week
+      h+='<table class="hours-table" style="margin-bottom:4px"><thead><tr><th>Event / Note</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead><tbody>';
+      grp.entries.forEach(function(item,idx2){
+        var t=item.entry;
+        var ms=item.ms;
+        if(item.type==='event'){
+          var ev=state.events.find(function(e){return e.id===t.event_id;});
+          var isIn=t.clocked_in&&!t.clocked_out;
+          var hrs=(ms/3600000).toFixed(2);
+          h+='<tr><td style="font-weight:500;color:var(--ss-cream)">'+esc(ev?ev.name:t.event_id)+'</td>';
+          h+='<td>'+(t.role?roleBadge(t.role):'')+'</td>';
+          h+='<td style="color:var(--ss-muted)">'+(ev?fmtDate(ev.date):'')+'</td>';
+          h+='<td>'+(isIn?'<span class="badge badge-clocked">'+fmtH(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(ms)+'</span>')+'</td>';
+          h+='<td style="white-space:nowrap"><button class="btn btn-sm sns-sh-edit" data-idx="'+entries.indexOf(t)+'" data-hrs="'+hrs+'" style="margin-right:4px"><i class="ti ti-edit" aria-hidden="true"></i></button>';
+          h+='<button class="btn btn-sm btn-danger sns-sh-del" data-idx="'+entries.indexOf(t)+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
+        } else {
+          var isDrop=t.note&&t.note.startsWith('Drop');
+          var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
+          var rawNote=t.note||'';
+          var displayNote=isDrop?rawNote.replace('Drop — 3h | ','').replace('Drop — 3h','').trim()||'Drop':rawNote||'Time clock';
+          var isIn=t.clocked_in&&!t.clocked_out;
+          h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+(isDrop?'<span class="badge badge-picked" style="margin-right:6px;font-size:9px;vertical-align:middle">Drop</span>':'')+esc(displayNote)+'</div></td>';
+          h+='<td><span style="font-size:11px;color:var(--ss-muted)">Clock</span></td>';
+          h+='<td style="color:var(--ss-muted)">'+inDate+'</td>';
+          h+='<td>'+(isIn?'<span class="badge badge-clocked">'+fmtH(ms)+'</span>':'<span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(ms)+'</span>')+'</td>';
+          h+='<td style="white-space:nowrap"><button class="btn btn-sm btn-danger sns-tc-del-sh" data-idx="'+tcEntries.indexOf(t)+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
+        }
+      });
+      h+='</tbody></table>';
+    });
+  }
+
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-staffhours">Close</button></div></div>';
-  m.innerHTML=h;document.body.appendChild(m);
+  m.innerHTML=h;
+  document.body.appendChild(m);
+
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
-  m.querySelectorAll('.sns-eh-edit').forEach(function(b){b.onclick=function(){var t=entries[parseInt(b.dataset.idx)];if(t)openEditHoursModal(t.id,name,b.dataset.hrs);};});
-  m.querySelectorAll('.sns-eh-del').forEach(function(b){b.onclick=function(){var t=entries[parseInt(b.dataset.idx)];if(t)deleteHoursEntry(t.id,name);};});
-  m.querySelectorAll('.sns-tc-del-idx').forEach(function(b){b.onclick=function(){var t=tcEntries[parseInt(b.dataset.idx)];if(t)deleteTimeclockEntry(t.id);};});
+  m.querySelectorAll('.sns-sh-edit').forEach(function(b){
+    b.onclick=function(){var t=entries[parseInt(b.dataset.idx)];if(t)openEditHoursModal(t.id,name,b.dataset.hrs);};
+  });
+  m.querySelectorAll('.sns-sh-del').forEach(function(b){
+    b.onclick=function(){var t=entries[parseInt(b.dataset.idx)];if(t)deleteHoursEntry(t.id,name);};
+  });
+  m.querySelectorAll('.sns-tc-del-sh').forEach(function(b){
+    b.onclick=function(){var t=tcEntries[parseInt(b.dataset.idx)];if(t)deleteTimeclockEntry(t.id);};
+  });
 }
 
 function openEditHoursModal(entryId,staffName,currentHrs){
