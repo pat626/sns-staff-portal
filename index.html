@@ -82,6 +82,7 @@ textarea{resize:vertical;min-height:64px;}
 .role-server{background:rgba(100,160,255,.12);color:#78b0ff;border:1px solid rgba(100,160,255,.25);}
 .role-bartender{background:rgba(180,100,255,.12);color:#c87bff;border:1px solid rgba(180,100,255,.25);}
 .role-chef{background:rgba(255,160,50,.12);color:#ffaa40;border:1px solid rgba(255,160,50,.25);}
+.role-delivery{background:rgba(100,210,200,.12);color:#64d2c8;border:1px solid rgba(100,210,200,.25);}
 .hours-table{width:100%;border-collapse:collapse;font-size:13px;}
 .hours-table th{text-align:left;padding:6px 10px;font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--ss-border-gold);}
 .hours-table td{padding:9px 10px;border-bottom:1px solid var(--ss-border);color:var(--ss-text);vertical-align:top;}
@@ -164,7 +165,7 @@ const SUPA_URL='https://fxiufkfxbtjupmfdtboh.supabase.co';
 const SUPA_KEY='sb_publishable_1tNLKiuhtbABPtymQkndRg_RzkzqxeU';
 const ADMIN_EMAIL='Pat@forkhospitality.com';
 const REVIEW_EMAILS=[{name:'Pat',email:'Pat@forkhospitality.com'},{name:'Erick',email:'Erick@forkhospitality.com'},{name:'Chef John',email:'chefjohn@forkhospitality.com'},{name:'Matt',email:'matt@forkhospitality.com'}];
-const EVENT_TYPES=['Corporate','Private Party','Wedding','Cocktail Reception','Clam Bake','Business Breakfast','Boxed Lunch','Wine Dinner','Outdoor Event','Graduation','Other'];
+const EVENT_TYPES=['Corporate','Private Party','Wedding','Cocktail Reception','Clam Bake','Business Breakfast','Boxed Lunch','Wine Dinner','Outdoor Event','Graduation','Drop & Set','Other'];
 const ROLES=['Server','Bartender','Chef'];
 const {createClient}=supabase;
 const db=createClient(SUPA_URL,SUPA_KEY);
@@ -311,7 +312,7 @@ function statusBadge(e){
 function roleBadge(role){
   if(!role)return '';
   var r=role.toLowerCase();
-  var cls=r==='server'?'role-server':r==='bartender'?'role-bartender':'role-chef';
+  var cls=r==='server'?'role-server':r==='bartender'?'role-bartender':r==='delivery'?'role-delivery':'role-chef';
   return '<span class="bid-role-tag '+cls+'">'+esc(role)+'</span>';
 }
 
@@ -334,6 +335,8 @@ function filterBar(){
 function eventMetaHTML(e){
   var h='<div class="event-meta">';
   h+='<div class="event-meta-row"><i class="ti ti-calendar" aria-hidden="true"></i>'+fmtDate(e.date)+(e.start_time?' &middot; '+esc(e.start_time)+(e.end_time?'&ndash;'+esc(e.end_time):''):'')+'</div>';
+  if(e.arrival_time)h+='<div class="event-meta-row"><i class="ti ti-clock" aria-hidden="true"></i>Arrival: '+esc(e.arrival_time)+'</div>';
+  if(e.address)h+='<div class="event-meta-row"><i class="ti ti-map-2" aria-hidden="true"></i>'+esc(e.address)+'</div>';
   if(e.location)h+='<div class="event-meta-row"><i class="ti ti-map-pin" aria-hidden="true"></i>'+esc(e.location)+'</div>';
   if(e.guests)h+='<div class="event-meta-row"><i class="ti ti-users" aria-hidden="true"></i>~'+esc(e.guests)+' guests</div>';
   if(e.notes)h+='<div class="event-meta-row"><i class="ti ti-notes" aria-hidden="true"></i>'+esc(e.notes)+'</div>';
@@ -390,7 +393,7 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-bid').forEach(function(b){b.onclick=function(){openBidModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-withdraw').forEach(function(b){b.onclick=function(){withdrawBid(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-clock-in').forEach(function(b){b.onclick=function(){clockIn(b.dataset.id);};});
-  mcEl.querySelectorAll('.sns-clock-out').forEach(function(b){b.onclick=function(){clockOut(b.dataset.id);};});
+  mcEl.querySelectorAll('.sns-drop-clock-in').forEach(function(b){b.onclick=function(){dropClockIn(b.dataset.id);};}); mcEl.querySelectorAll('.sns-clock-out').forEach(function(b){b.onclick=function(){clockOut(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-change-shift').forEach(function(b){b.onclick=function(){openShiftRequestModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-change-name').forEach(function(b){b.onclick=function(){changeStaff();};});
   mcEl.querySelectorAll('.sns-tc-in').forEach(function(b){b.onclick=function(){tcPunchIn();};});
@@ -577,29 +580,80 @@ function renderAdminReviews(){
   if(state.reviewingEventId){
     var ev=state.events.find(function(e){return e.id===state.reviewingEventId;});
     var existing=(state.eventReviews||[]).find(function(r){return r.event_id===state.reviewingEventId;});
+    if(ev&&ev.type==='Drop & Set')return renderDropSetReviewForm(ev,existing);
     return renderReviewForm(ev,existing);
   }
   var today=new Date();today.setHours(0,0,0,0);
   var past=state.events.filter(function(e){return e.date&&new Date(e.date+'T00:00:00')<today;});
   var reviews=state.eventReviews||[];
+  var regular=past.filter(function(e){return e.type!=='Drop & Set';});
+  var dropsets=past.filter(function(e){return e.type==='Drop & Set';});
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem"><div class="section-title">Post-event Reviews</div>';
   h+='<button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button></div><div class="divider-line"></div>';
   if(!past.length)return h+'<div class="empty"><i class="ti ti-clipboard-check" aria-hidden="true"></i>No past events to review yet.</div>';
-  h+='<div style="display:flex;flex-direction:column;gap:10px">';
-  past.forEach(function(e){
+
+  function eventCard(e){
     var review=reviews.find(function(r){return r.event_id===e.id;});
-    h+='<div class="event-card" style="border-left:3px solid '+(review?'var(--ss-gold-dim)':'var(--ss-border)')+'">';
-    h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
-    h+='<div>'+(e.type?'<span class="event-type-tag" style="margin-bottom:5px;display:inline-flex">'+esc(e.type)+'</span><br>':'')+
+    var isDS=e.type==='Drop & Set';
+    var ch='<div class="event-card" style="border-left:3px solid '+(review?'var(--ss-gold-dim)':'var(--ss-border)')+'">';
+    ch+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
+    ch+='<div>'+(e.type?'<span class="event-type-tag" style="margin-bottom:5px;display:inline-flex">'+esc(e.type)+'</span><br>':'')+
        '<div class="event-name">'+esc(e.name)+'</div><div style="font-size:12px;color:var(--ss-muted);margin-top:3px">'+fmtDate(e.date)+'</div></div>';
-    h+=review?'<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> Reviewed</span>':'<span class="badge badge-closed">No review</span>';
-    h+='</div>';
-    if(review)h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ss-muted)"><span>Overall: '+(review.overall_rating||'&mdash;')+'/5</span><span>Food: '+(review.food_quality||'&mdash;')+'/5</span><span>Staff: '+(review.staff_performance||'&mdash;')+'/5</span><span>Client: '+(review.client_satisfaction||'&mdash;')+'/5</span></div>';
-    h+='<div class="card-actions"><button class="btn btn-sm '+(review?'':'btn-gold')+' sns-write-review" data-eid="'+e.id+'"><i class="ti ti-'+(review?'edit':'clipboard-check')+'" aria-hidden="true"></i> '+(review?'Edit review':'Write review')+'</button>';
-    if(review)h+='<button class="btn btn-sm btn-danger sns-del-review" data-rid="'+review.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
-    h+='</div></div>';
-  });
+    ch+=review?'<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> Reviewed</span>':'<span class="badge badge-closed">No review</span>';
+    ch+='</div>';
+    if(review){
+      if(isDS){
+        ch+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ss-muted)"><span>Rating: '+(review.overall_rating||'&mdash;')+'/5</span></div>';
+      } else {
+        ch+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ss-muted)"><span>Overall: '+(review.overall_rating||'&mdash;')+'/5</span><span>Food: '+(review.food_quality||'&mdash;')+'/5</span><span>Staff: '+(review.staff_performance||'&mdash;')+'/5</span><span>Client: '+(review.client_satisfaction||'&mdash;')+'/5</span></div>';
+      }
+    }
+    ch+='<div class="card-actions"><button class="btn btn-sm '+(review?'':'btn-gold')+' sns-write-review" data-eid="'+e.id+'"><i class="ti ti-'+(review?'edit':'clipboard-check')+'" aria-hidden="true"></i> '+(review?'Edit review':'Write review')+'</button>';
+    if(review)ch+='<button class="btn btn-sm btn-danger sns-del-review" data-rid="'+review.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
+    ch+='</div></div>';
+    return ch;
+  }
+
+  h+='<div style="display:flex;flex-direction:column;gap:10px">';
+  if(regular.length){
+    h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Events</div>';
+    regular.forEach(function(e){h+=eventCard(e);});
+  }
+  if(dropsets.length){
+    h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin:1rem 0 4px">Drop &amp; Sets</div>';
+    dropsets.forEach(function(e){h+=eventCard(e);});
+  }
   h+='</div>';return h;
+}
+
+function renderDropSetReviewForm(ev,existing){
+  var v=existing||{};
+  var rv=v.overall_rating||0;
+  var h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">';
+  h+='<button class="btn btn-sm sns-reviews-back"><i class="ti ti-arrow-left" aria-hidden="true"></i> Back</button>';
+  h+='<div class="section-title" style="font-size:16px">'+esc(ev?ev.name:'Event')+'</div></div>';
+  if(ev){
+    h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">'+fmtDate(ev.date);
+    if(ev.arrival_time)h+=' &middot; Arrival '+esc(ev.arrival_time);
+    if(ev.address)h+=' &middot; '+esc(ev.address);
+    h+='</div>';
+  }
+  h+='<div class="divider-line"></div>';
+  h+='<div class="form-group"><label class="form-label">Reviewed by</label><input type="text" id="r-reviewer" value="'+(v.reviewer_name?esc(v.reviewer_name):'Pat')+'" style="max-width:220px"></div>';
+  // Single overall rating
+  h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Rating</div>';
+  h+='<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;margin-bottom:1rem">';
+  h+='<div style="font-size:13px;color:var(--ss-text);flex:1">Overall</div><div id="stars-overall_rating">';
+  for(var n=1;n<=5;n++)h+='<span class="rstar'+(rv&&n<=rv?' active':'')+'" data-field="overall_rating" data-val="'+n+'" style="font-size:22px"><i class="ti ti-star" aria-hidden="true"></i></span>';
+  h+='</div></div>';
+  h+='<div class="divider-line"></div>';
+  h+='<div class="form-group"><label class="form-label">Notes</label><textarea id="r-notes" placeholder="How did the drop & set go? Any issues with the delivery, setup, or timing…" style="min-height:100px">'+esc(v.general_notes||'')+'</textarea></div>';
+  h+='<div class="form-group"><label class="form-label">Issues <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="r-issues" placeholder="Any problems to flag…">'+esc(v.issues||'')+'</textarea></div>';
+  h+='<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--ss-border)">';
+  h+='<button class="btn sns-reviews-back">Cancel</button>';
+  h+='<button class="btn btn-gold sns-submit-review" data-eid="'+(ev?ev.id:'')+'" data-rid="'+(existing?existing.id:'')+'">';
+  h+='<i class="ti ti-check" aria-hidden="true"></i> '+(existing?'Update review':'Submit review')+'</button></div>';
+  return h;
 }
 
 function renderReviewForm(ev,existing){
@@ -674,7 +728,10 @@ function renderEmployee(){
       h+='</div>'+eventMetaHTML(e);
       if(pb)h+='<div style="margin-top:2px">'+roleBadge(pb.role)+'</div>';
       h+='<div class="card-actions">';
-      if(isIn)h+='<button class="btn btn-clockout btn-sm sns-clock-out" data-id="'+e.id+'"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out</button>';
+      if(e.type==='Drop & Set'){
+        if(!logged)h+='<button class="btn btn-gold btn-sm sns-drop-clock-in" data-id="'+e.id+'"><i class="ti ti-clock-plus" aria-hidden="true"></i> Drop clock in (+3h)</button>';
+        else h+='<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> 3h logged</span>';
+      } else if(isIn)h+='<button class="btn btn-clockout btn-sm sns-clock-out" data-id="'+e.id+'"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out</button>';
       else h+='<button class="btn btn-clock btn-sm sns-clock-in" data-id="'+e.id+'"><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>';
       h+='<button class="btn btn-sm sns-change-shift" data-id="'+e.id+'"><i class="ti ti-arrows-exchange" aria-hidden="true"></i> Change shift</button>';
       h+='</div></div>';
@@ -836,7 +893,9 @@ async function postNewEvent(){
     servers_needed:parseInt(document.getElementById('c-servers').value)||0,
     bartenders_needed:parseInt(document.getElementById('c-bartenders').value)||0,
     chefs_needed:parseInt(document.getElementById('c-chefs').value)||0,
-    status:'open'
+    status:'open',
+    arrival_time:document.getElementById('c-arrival')?document.getElementById('c-arrival').value||null:null,
+    address:document.getElementById('c-address')?document.getElementById('c-address').value.trim()||null:null
   };
   var res=await db.from('events').insert(payload).select();
   if(res.error){showToast('Error: '+(res.error.message||'unknown'),false);return;}
@@ -860,7 +919,9 @@ async function updateEvent(eventId){
     guests:document.getElementById('e-guests').value||null,
     servers_needed:parseInt(document.getElementById('e-servers').value)||0,
     bartenders_needed:parseInt(document.getElementById('e-bartenders').value)||0,
-    chefs_needed:parseInt(document.getElementById('e-chefs').value)||0
+    chefs_needed:parseInt(document.getElementById('e-chefs').value)||0,
+    arrival_time:document.getElementById('e-arrival')?document.getElementById('e-arrival').value||null:null,
+    address:document.getElementById('e-address')?document.getElementById('e-address').value.trim()||null:null
   }).eq('id',eventId);
   if(res.error){showToast('Error saving.',false);return;}
   closeModal('modal-edit');await fetchAll();render();showToast('Event updated!');
@@ -942,6 +1003,23 @@ async function placeBid(eventId){
 async function withdrawBid(bidId){
   await db.from('bids').delete().eq('id',bidId);
   await fetchAll();render();showToast('Bid withdrawn.');
+}
+
+async function dropClockIn(eventId){
+  var myEm=(state.employeeEmail||'').toLowerCase().trim();
+  var existing=state.timeEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
+  if(existing&&existing.total_ms>0){showToast('Already logged for this event.',false);return;}
+  var pb=state.bids.find(function(b){return b.event_id===eventId&&b.staff_name===state.employeeName&&b.selected;});
+  var threeH=3*60*60*1000;
+  var now=Date.now();
+  var ev=state.events.find(function(e){return e.id===eventId;});
+  var noteStr='Drop & Set — 3h'+(ev?' | '+ev.name:'');
+  if(existing){
+    await db.from('time_entries').update({clocked_in:null,clocked_out:now,total_ms:threeH}).eq('id',existing.id);
+  }else{
+    await db.from('time_entries').insert({event_id:eventId,staff_name:state.employeeName,staff_email:state.employeeEmail,role:pb?pb.role:null,clocked_in:null,clocked_out:now,total_ms:threeH,note:noteStr});
+  }
+  await fetchAll();render();showToast('3h logged for Drop & Set!');
 }
 
 async function clockIn(eventId){
@@ -1116,7 +1194,10 @@ async function submitReview(eventId,existingId){
   var ev=state.events.find(function(e){return e.id===eventId;});
   if(ev){
     function rl(label,rating,notes){return label+': '+(rating?rating+'/5':'Not rated')+(notes?'\nNotes: '+notes:'');}
-    var body='Post-event review for '+ev.name+' ('+ev.date+') by '+(reviewer||'Admin')+'.\n\nRATINGS\n'+rl('Overall',payload.overall_rating,payload.overall_notes)+'\n'+rl('Food quality',payload.food_quality,payload.food_notes)+'\n'+rl('Staff performance',payload.staff_performance,payload.staff_notes)+'\n'+rl('Client satisfaction',payload.client_satisfaction,payload.client_notes)+(payload.issues?'\n\nISSUES\n'+payload.issues:'')+(payload.general_notes?'\n\nGENERAL NOTES\n'+payload.general_notes:'');
+    var isDS=ev.type==='Drop & Set';
+    var body=isDS
+      ?'Drop & Set review for '+ev.name+' ('+ev.date+') by '+(reviewer||'Admin')+'.\n\nRATING\nOverall: '+(payload.overall_rating?payload.overall_rating+'/5':'Not rated')+(payload.general_notes?'\n\nNOTES\n'+payload.general_notes:'')+(payload.issues?'\n\nISSUES\n'+payload.issues:'')
+      :'Post-event review for '+ev.name+' ('+ev.date+') by '+(reviewer||'Admin')+'.\n\nRATINGS\n'+rl('Overall',payload.overall_rating,payload.overall_notes)+'\n'+rl('Food quality',payload.food_quality,payload.food_notes)+'\n'+rl('Staff performance',payload.staff_performance,payload.staff_notes)+'\n'+rl('Client satisfaction',payload.client_satisfaction,payload.client_notes)+(payload.issues?'\n\nISSUES\n'+payload.issues:'')+(payload.general_notes?'\n\nGENERAL NOTES\n'+payload.general_notes:'');
     for(var i=0;i<REVIEW_EMAILS.length;i++){await sendEmail(REVIEW_EMAILS[i].email,REVIEW_EMAILS[i].name,'Post-event review: '+ev.name+' ('+ev.date+')',body);}
   }
   state.reviewingEventId=null;reviewRatings={overall_rating:0,food_quality:0,staff_performance:0,client_satisfaction:0};
@@ -1255,8 +1336,10 @@ function openCreateModal(){
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Event type</label><select id="c-type"><option value="">\u2014 Select \u2014</option>';
   EVENT_TYPES.forEach(function(t){h+='<option>'+t+'</option>';});
   h+='</select></div><div class="form-group"><label class="form-label">Guest count</label><input type="number" id="c-guests" min="0"></div></div>';
+  setTimeout(function(){var sel=document.getElementById('c-type');if(sel)sel.onchange=function(){var ds=document.getElementById('c-dropset-fields');if(ds)ds.style.display=this.value==='Drop & Set'?'block':'none';};},0);
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="c-date"></div><div class="form-group"><label class="form-label">Start time</label><input type="time" id="c-start"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">End time</label><input type="time" id="c-end"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="c-loc"></div></div>';
+h+='<div id="c-dropset-fields" style="display:none"><div class="form-row"><div class="form-group"><label class="form-label">Arrival time</label><input type="time" id="c-arrival"></div><div class="form-group"><label class="form-label">Address</label><input type="text" id="c-address" placeholder="123 Main St, City"></div></div></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">';
   h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Staff needed</div>';
   h+='<div class="form-row-3"><div class="form-group" style="margin-bottom:0"><label class="form-label">Servers</label><input type="number" id="c-servers" min="0" value="0"></div>';
@@ -1279,6 +1362,7 @@ function openEditModal(eventId){
   h+='</select></div><div class="form-group"><label class="form-label">Guest count</label><input type="number" id="e-guests" min="0" value="'+esc(e.guests||'')+'"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="e-date" value="'+esc(e.date||'')+'"></div><div class="form-group"><label class="form-label">Start time</label><input type="time" id="e-start" value="'+esc(e.start_time||'')+'"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">End time</label><input type="time" id="e-end" value="'+esc(e.end_time||'')+'"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="e-loc" value="'+esc(e.location||'')+'"></div></div>';
+h+='<div id="e-dropset-fields" style="display:'+(e.type==='Drop & Set'?'block':'none')+'"><div class="form-row"><div class="form-group"><label class="form-label">Arrival time</label><input type="time" id="e-arrival" value="'+esc(e.arrival_time||'')+'"></div><div class="form-group"><label class="form-label">Address</label><input type="text" id="e-address" value="'+esc(e.address||'')+'"></div></div></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">';
   h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Staff needed</div>';
   h+='<div class="form-row-3"><div class="form-group" style="margin-bottom:0"><label class="form-label">Servers</label><input type="number" id="e-servers" min="0" value="'+(e.servers_needed||0)+'"></div>';
@@ -1318,6 +1402,27 @@ function openBidsModal(eventId){
     });
     gh+='</div>';return gh;
   }
+  if(e.type==='Drop & Set'){
+    var deliveryBids=bids.filter(function(b){return b.role==='Delivery';});
+    if(deliveryBids.length){
+      var dh='<div style="font-size:11px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.08em;margin:1rem 0 .5rem;padding-bottom:6px;border-bottom:1px solid var(--ss-border)">Delivery &mdash; '+deliveryBids.filter(function(b){return b.selected;}).length+' selected</div>';
+      dh+='<div class="bids-list" style="margin-bottom:.75rem">';
+      deliveryBids.forEach(function(b){
+        dh+='<div class="bid-item'+(b.selected?' selected':'')+'">';
+        dh+='<div style="min-width:0"><div class="bid-name">'+esc(b.staff_name)+'</div>';
+        if(b.staff_email)dh+='<div class="bid-meta"><i class="ti ti-mail" style="font-size:11px"></i> '+esc(b.staff_email)+'</div>';
+        if(b.note)dh+='<div class="bid-note">"'+esc(b.note)+'"</div>';
+        if(b.selected)dh+='<div class="my-shift-note"><i class="ti ti-star" aria-hidden="true"></i> Selected</div>';
+        dh+='</div><div style="display:flex;gap:5px;flex-shrink:0">';
+        dh+='<button class="btn btn-sm sns-edit-bid-role" data-bid="'+b.id+'" data-name="'+esc(b.staff_name)+'" data-role="'+esc(b.role||'')+'" data-eid="'+eventId+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
+        if(b.selected)dh+='<button class="btn btn-sm sns-deselect-bid" data-bid="'+b.id+'" data-eid="'+eventId+'">Remove</button>';
+        else dh+='<button class="btn btn-sm btn-success sns-select-bid" data-bid="'+b.id+'" data-eid="'+eventId+'" data-role="Delivery" data-needs="99"><i class="ti ti-check" aria-hidden="true"></i> Pick</button>';
+        dh+='</div></div>';
+      });
+      dh+='</div>';
+      h+=dh;
+    }
+  }
   h+=renderBidGroup('Server',e.servers_needed||0);
   h+=renderBidGroup('Bartender',e.bartenders_needed||0);
   h+=renderBidGroup('Chef',e.chefs_needed||0);
@@ -1332,10 +1437,17 @@ function openBidsModal(eventId){
 function openBidModal(eventId){
   var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;
   var roles=[];
-  if(e.servers_needed>0)roles.push('Server');
-  if(e.bartenders_needed>0)roles.push('Bartender');
-  if(e.chefs_needed>0)roles.push('Chef');
-  if(!roles.length)roles=ROLES;
+  if(e.type==='Drop & Set'){
+    roles=['Delivery'];
+    if(e.servers_needed>0)roles.push('Server');
+    if(e.bartenders_needed>0)roles.push('Bartender');
+    if(e.chefs_needed>0)roles.push('Chef');
+  } else {
+    if(e.servers_needed>0)roles.push('Server');
+    if(e.bartenders_needed>0)roles.push('Bartender');
+    if(e.chefs_needed>0)roles.push('Chef');
+    if(!roles.length)roles=ROLES;
+  }
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-bid';
   var h='<div class="modal"><div class="modal-title">Bid for Shift <button class="btn btn-sm sns-close-modal" data-modal="modal-bid"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1.25rem">';
