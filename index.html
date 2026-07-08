@@ -399,6 +399,16 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-tc-edit').forEach(function(b){b.onclick=function(){openEditTimeclockModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-tc-del').forEach(function(b){b.onclick=function(){deleteTimeclockEntry(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-tc-add').forEach(function(b){b.onclick=function(){openAddTimeclockModal();};});
+  document.querySelectorAll('.sns-week-toggle').forEach(function(btn){
+    btn.onclick=function(){
+      var body=document.getElementById(btn.dataset.target);
+      if(!body)return;
+      var open=body.style.display!=='none';
+      body.style.display=open?'none':'block';
+      var icon=btn.querySelector('i');
+      if(icon)icon.className='ti ti-chevron-'+(open?'right':'down');
+    };
+  });
   setTimeout(function(){
     var b=mcEl.querySelector('.sns-post-event');
     if(b)b.onclick=function(){openCreateModal();};
@@ -755,16 +765,21 @@ function renderTimeclock(){
       weekGroups[wk].employees[empKey].totalMs+=ms;
       weekGroups[wk].totalMs+=ms;
     });
-    weekOrder.forEach(function(wk){
+    weekOrder.forEach(function(wk,wi){
       var grp=weekGroups[wk];
-      h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:1rem 0 6px">';
-      h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em">'+grp.label+'</div>';
-      h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+' total</div></div>';
-      h+='<div style="border-top:1px solid var(--ss-border-gold);margin-bottom:6px"></div>';
+      var isFirst=wi===0;
+      var toggleId='tc-week-'+wi;
+      // Collapsible week header
+      h+='<div class="sns-week-toggle" data-target="'+toggleId+'" style="display:flex;align-items:center;justify-content:space-between;padding:9px 10px;margin:6px 0 0;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;cursor:pointer;user-select:none">';
+      h+='<div style="display:flex;align-items:center;gap:8px">';
+      h+='<i class="ti ti-chevron-'+(isFirst?'down':'right')+'" style="font-size:13px;color:var(--ss-muted)" aria-hidden="true"></i>';
+      h+='<span style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.07em">'+grp.label+'</span></div>';
+      h+='<span style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+'</span></div>';
+      // Collapsible body
+      h+='<div id="'+toggleId+'" style="display:'+(isFirst?'block':'none')+';padding:4px 0 4px 0">';
       grp.empOrder.forEach(function(empKey){
         var emp=grp.employees[empKey];
-        // Employee subheader with their weekly total
-        h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0 4px;margin-top:4px">';
+        h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 4px 4px;margin-top:4px">';
         h+='<div style="font-size:12px;font-weight:500;color:var(--ss-cream)">'+esc(emp.name)+'</div>';
         h+='<div style="font-size:11px;color:var(--ss-gold-dim);font-weight:500">'+fmtH(emp.totalMs)+'</div></div>';
         emp.entries.forEach(function(t){
@@ -784,6 +799,7 @@ function renderTimeclock(){
           h+='<button class="btn btn-sm btn-danger sns-tc-del" data-id="'+t.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button></div></div>';
         });
       });
+      h+='</div>';
     });
   }
   h+='</div></div>';return h;
@@ -1395,13 +1411,17 @@ function openStaffHoursModal(name){
   if(!entries.length&&!tcEntries.length){
     h+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
   } else {
-    weekOrder.forEach(function(wk){
+    weekOrder.forEach(function(wk,wi){
       var grp=weekGroups[wk];
-      // Week header
-      h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:1rem 0 6px">';
-      h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em">'+grp.label+'</div>';
-      h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+' total</div></div>';
-      h+='<div style="border-top:1px solid var(--ss-border-gold);margin-bottom:6px"></div>';
+      var isFirst=wi===0;
+      var toggleId='sh-week-'+wi;
+      // Collapsible week header
+      h+='<div class="sns-week-toggle" data-target="'+toggleId+'" style="display:flex;align-items:center;justify-content:space-between;padding:9px 10px;margin:6px 0 4px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;cursor:pointer;user-select:none">';
+      h+='<div style="display:flex;align-items:center;gap:8px">';
+      h+='<i class="ti ti-chevron-'+(isFirst?'down':'right')+'" style="font-size:13px;color:var(--ss-muted)" aria-hidden="true"></i>';
+      h+='<span style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.07em">'+grp.label+'</span></div>';
+      h+='<span style="font-size:11px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(grp.totalMs)+'</span></div>';
+      h+='<div id="'+toggleId+'" style="display:'+(isFirst?'block':'none')+'">';
       // Entries for this week
       h+='<table class="hours-table" style="margin-bottom:4px"><thead><tr><th>Event / Note</th><th>Role</th><th>Date</th><th>Hours</th><th></th></tr></thead><tbody>';
       grp.entries.forEach(function(item,idx2){
@@ -1430,7 +1450,7 @@ function openStaffHoursModal(name){
           h+='<td style="white-space:nowrap"><button class="btn btn-sm btn-danger sns-tc-del-sh" data-idx="'+tcEntries.indexOf(t)+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
         }
       });
-      h+='</tbody></table>';
+      h+='</tbody></table></div>';
     });
   }
 
@@ -1439,6 +1459,16 @@ function openStaffHoursModal(name){
   document.body.appendChild(m);
 
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelectorAll('.sns-week-toggle').forEach(function(btn){
+    btn.onclick=function(){
+      var body=document.getElementById(btn.dataset.target);
+      if(!body)return;
+      var open=body.style.display!=='none';
+      body.style.display=open?'none':'block';
+      var icon=btn.querySelector('i');
+      if(icon)icon.className='ti ti-chevron-'+(open?'right':'down');
+    };
+  });
   m.querySelectorAll('.sns-sh-edit').forEach(function(b){
     b.onclick=function(){var t=entries[parseInt(b.dataset.idx)];if(t)openEditHoursModal(t.id,name,b.dataset.hrs);};
   });
