@@ -1235,19 +1235,7 @@ async function sendReminderEmails(eventId){
   for(var i=0;i<picked.length;i++){
     var b=picked[i];
     var role=b.role||'staff';
-    var body='Hi '+b.staff_name+', just a reminder that you are on the schedule'+(ev.date?' tomorrow':'')+'.
-
-Event: '+ev.name+'
-Date: '+fmtDate(ev.date)+(ev.start_time?'
-Time: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+(ev.location?'
-Venue: '+ev.location:'')+(ev.arrival_time?'
-Arrival: '+fmtTime(ev.arrival_time):'')+(ev.address?'
-Address: '+ev.address:'')+'
-Your role: '+role+'
-
-Please clock in through the staff portal when you arrive. If anything has changed, submit a shift request as soon as possible.
-
-— The Shaken & Stirred Team';
+    var body='Hi '+b.staff_name+', just a reminder that you are on the schedule'+(ev.date?' tomorrow':'')+'.\n\nEvent: '+ev.name+'\nDate: '+fmtDate(ev.date)+(ev.start_time?'\nTime: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+(ev.location?'\nVenue: '+ev.location:'')+(ev.arrival_time?'\nArrival: '+fmtTime(ev.arrival_time):'')+(ev.address?'\nAddress: '+ev.address:'')+'\nYour role: '+role+'\n\nPlease clock in through the staff portal when you arrive. If anything has changed, submit a shift request as soon as possible.\n\n— The Shaken & Stirred Team';
     var ok=await sendEmail(b.staff_email,b.staff_name,'Reminder: you are on the schedule — '+ev.name,body);
     if(ok)sent++;
   }
@@ -1397,24 +1385,17 @@ function openPayrollModal(){
     var newRates={};
     m.querySelectorAll('.pay-rate-input').forEach(function(inp){newRates[inp.dataset.key]=parseFloat(inp.value)||0;});
     try{localStorage.setItem('ss-pay-rates',JSON.stringify(newRates));}catch(e){}
-    var csv='SHAKEN & STIRRED EVENTS - PAYROLL EXPORT
-Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'
-
-';
-    csv+='Staff,Email,Total Hours,Hourly Rate,Total Pay
-';
+    var csv='SHAKEN & STIRRED EVENTS - PAYROLL EXPORT\nGenerated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'\n\n';
+    csv+='Staff,Email,Total Hours,Hourly Rate,Total Pay\n';
     var grandTotal=0;
     rows.forEach(function(r){
       var rate=newRates[r.email||r.name]||0;
       var hrs=(r.ms/3600000);
       var pay=hrs*rate;
       grandTotal+=pay;
-      csv+='"'+r.name+'","'+(r.email||'')+'",'+hrs.toFixed(2)+','+rate.toFixed(2)+','+pay.toFixed(2)+'
-';
+      csv+='"'+r.name+'","'+(r.email||'')+'",'+hrs.toFixed(2)+','+rate.toFixed(2)+','+pay.toFixed(2)+'\n';
     });
-    csv+='
-,,,"Grand Total",$'+grandTotal.toFixed(2)+'
-';
+    csv+='\n,,,"Grand Total",$'+grandTotal.toFixed(2)+'\n';
     var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
     a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';a.click();
     closeModal('modal-payroll');showToast('Payroll exported!');
