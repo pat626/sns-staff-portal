@@ -120,6 +120,9 @@ textarea{resize:vertical;min-height:64px;}
 .tc-date{font-size:12px;color:var(--ss-muted);margin-bottom:1.5rem;}
 .tc-input{width:100%;font-family:"Inter",sans-serif;font-size:14px;padding:11px 14px;border:1px solid var(--ss-border);border-radius:4px;background:var(--ss-surface2);color:var(--ss-text);text-align:center;margin-bottom:1.25rem;}
 .tc-input::placeholder{color:var(--ss-muted);}
+.tc-cat-btn{font-family:'Inter',sans-serif;font-size:12px;padding:8px 14px;border-radius:4px;border:1px solid var(--ss-border);background:transparent;color:var(--ss-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;font-weight:500;}
+.tc-cat-btn:hover{border-color:var(--ss-border-gold);color:var(--ss-gold);}
+.tc-cat-active{background:rgba(201,168,76,.12);color:var(--ss-gold);border-color:var(--ss-border-gold);}
 .tc-status{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem;}
 .tc-dot{width:7px;height:7px;border-radius:50%;background:var(--ss-muted);}
 .tc-dot.active{background:#66bb8a;}
@@ -175,7 +178,7 @@ var state={
   employeeName:'',employeeEmail:'',
   events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],
   dateFilter:'upcoming',adminTab:'events',adminShowPast:false,reviewingEventId:null,
-  ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-'
+  ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event'
 };
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -372,11 +375,11 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-hours').forEach(function(b){b.onclick=function(){openEventHoursModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-edit-event').forEach(function(b){b.onclick=function(){openEditModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-recheck').forEach(function(b){b.onclick=function(){manualRecheckStatus(b.dataset.id);};});
-  mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};});
+  mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remind').forEach(function(b){b.onclick=function(){sendReminderEmails(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-toggle-status').forEach(function(b){b.onclick=function(){toggleStatus(b.dataset.id,b.dataset.status);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){openStaffHoursModal(b.dataset.name);};});
-  mcEl.querySelectorAll('.sns-export-csv').forEach(function(b){b.onclick=function(){exportHours();};});
+  mcEl.querySelectorAll('.sns-export-csv').forEach(function(b){b.onclick=function(){exportHours();};}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){openPayrollModal();};});
   mcEl.querySelectorAll('.sns-export-weekly').forEach(function(b){b.onclick=function(){exportWeeklyReport();};});
   mcEl.querySelectorAll('.sns-approve').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'approved');};});
   mcEl.querySelectorAll('.sns-deny').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'denied');};});
@@ -394,7 +397,7 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-bid').forEach(function(b){b.onclick=function(){openBidModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-withdraw').forEach(function(b){b.onclick=function(){withdrawBid(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-clock-in').forEach(function(b){b.onclick=function(){clockIn(b.dataset.id);};});
-  mcEl.querySelectorAll('.sns-drop-clock-in').forEach(function(b){b.onclick=function(){dropClockIn(b.dataset.id);};}); mcEl.querySelectorAll('.sns-clock-out').forEach(function(b){b.onclick=function(){clockOut(b.dataset.id);};});
+  mcEl.querySelectorAll('.sns-drop-clock-in').forEach(function(b){b.onclick=function(){dropClockIn(b.dataset.id);};}); mcEl.querySelectorAll('.sns-confirm-shift').forEach(function(b){b.onclick=function(){confirmShift(b.dataset.bid);};}); mcEl.querySelectorAll('.sns-clock-out').forEach(function(b){b.onclick=function(){clockOut(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-change-shift').forEach(function(b){b.onclick=function(){openShiftRequestModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-change-name').forEach(function(b){b.onclick=function(){changeStaff();};});
   mcEl.querySelectorAll('.sns-tc-in').forEach(function(b){b.onclick=function(){tcPunchIn();};});
@@ -426,6 +429,7 @@ function attachListeners(){
     if(ei)ei.oninput=function(){lookupStaffByEmail();};
     var en=document.getElementById('emp-name');
     if(en)en.onkeydown=function(e){if(e.key==='Enter')setStaff();};
+    document.querySelectorAll('.sns-tc-cat').forEach(function(b){b.onclick=function(){setTCCategory(b.dataset.cat);};});
     var ti=document.getElementById('tc-name-field');
     if(ti){
       ti.oninput=function(){
@@ -437,12 +441,58 @@ function attachListeners(){
   },0);
 }
 
+function renderDashboardSummary(){
+  var today=new Date();today.setHours(0,0,0,0);
+  var weekEnd=new Date(today);weekEnd.setDate(today.getDate()+7);
+  var thisWeekEvents=state.events.filter(function(e){
+    if(!e.date)return false;
+    var d=new Date(e.date+'T00:00:00');
+    return d>=today&&d<=weekEnd;
+  });
+  var pendingReqs=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
+  var needsStaff=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;}).length;
+  var staffedEvents=thisWeekEvents.filter(function(e){return e.status==='filled';}).length;
+  var weekMs=0;
+  var activeNow=state.timeEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
+  state.timeEntries.forEach(function(t){
+    var ev=state.events.find(function(e){return e.id===t.event_id;});
+    if(!ev||!ev.date)return;
+    var d=new Date(ev.date+'T00:00:00');
+    if(d>=today&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+  });
+  var h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem">';
+  h+='<div class="stat-card"><div class="stat-val">'+thisWeekEvents.length+'</div><div class="stat-label">Events this week</div></div>';
+  h+='<div class="stat-card"><div class="stat-val" style="color:'+(pendingReqs>0?'#e6a032':'var(--ss-gold-light)')+'">'+pendingReqs+'</div><div class="stat-label">Pending requests</div></div>';
+  h+='<div class="stat-card"><div class="stat-val" style="color:'+(needsStaff>0?'#e57373':'#66bb8a')+'">'+needsStaff+'</div><div class="stat-label">Needs staff</div></div>';
+  h+='<div class="stat-card"><div class="stat-val">'+(activeNow>0?'<span style="color:#e6a032">'+activeNow+' active</span>':fmtH(weekMs))+'</div><div class="stat-label">'+(activeNow>0?'Clocked in now':'Hours this week')+'</div></div>';
+  h+='</div>';
+  // Alert for events needing staff this week
+  var openThisWeek=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;});
+  if(openThisWeek.length){
+    h+='<div style="background:rgba(229,115,115,.07);border:1px solid rgba(229,115,115,.25);border-radius:4px;padding:10px 14px;font-size:12px;color:#e57373;margin-bottom:1.25rem;display:flex;align-items:flex-start;gap:8px">';
+    h+='<i class="ti ti-alert-circle" aria-hidden="true" style="flex-shrink:0;margin-top:1px"></i><div>';
+    openThisWeek.forEach(function(e){
+      var missing=[];
+      var sBids=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Server'&&b.selected;}).length;
+      var bBids=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Bartender'&&b.selected;}).length;
+      var cBids=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Chef'&&b.selected;}).length;
+      if((e.servers_needed||0)>sBids)missing.push(((e.servers_needed||0)-sBids)+' server'+(((e.servers_needed||0)-sBids)!==1?'s':''));
+      if((e.bartenders_needed||0)>bBids)missing.push(((e.bartenders_needed||0)-bBids)+' bartender'+(((e.bartenders_needed||0)-bBids)!==1?'s':''));
+      if((e.chefs_needed||0)>cBids)missing.push(((e.chefs_needed||0)-cBids)+' chef'+(((e.chefs_needed||0)-cBids)!==1?'s':''));
+      h+='<div style="margin-bottom:3px"><strong style="color:var(--ss-cream)">'+esc(e.name)+'</strong> ('+fmtDate(e.date)+')'+(missing.length?' &mdash; needs '+missing.join(', '):'')+'</div>';
+    });
+    h+='</div></div>';
+  }
+  return h;
+}
+
 function renderAdmin(){
   if(!state.adminLoggedIn)return renderAdminLogin();
   var ejsOk=state.ejsPublicKey&&state.ejsServiceId&&state.ejsTemplateId;
   var pc=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
   var h='';
   if(!ejsOk)h+='<div class="info-box"><i class="ti ti-mail-off" aria-hidden="true"></i><div>Email notifications not configured. Click Settings to set up EmailJS.</div></div>';
+  h+=renderDashboardSummary();
   h+='<div class="tabs">';
   [['events','Events','ti-calendar-event'],['hours','Hours','ti-clock'],['requests','Requests','ti-arrows-exchange'],['staff','Staff','ti-users'],['reviews','Reviews','ti-clipboard-check']].forEach(function(t){
     var badge=t[0]==='requests'&&pc>0?' <span style="background:#e57373;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pc+'</span>':'';
@@ -499,7 +549,8 @@ function renderAdminEvents(){
     h+='<button class="btn btn-sm sns-hours" data-id="'+e.id+'"><i class="ti ti-clock" aria-hidden="true"></i> Hours</button>';
     h+='<button class="btn btn-sm sns-edit-event" data-id="'+e.id+'"><i class="ti ti-edit" aria-hidden="true"></i> Edit</button>';
     h+='<button class="btn btn-sm sns-recheck" data-id="'+e.id+'" title="Recheck status"><i class="ti ti-refresh" aria-hidden="true"></i></button>';
-    h+='<button class="btn btn-sm sns-resend" data-id="'+e.id+'" title="Resend notification"><i class="ti ti-send" aria-hidden="true"></i></button>';
+    h+='<button class="btn btn-sm sns-resend" data-id="'+e.id+'" title="Resend new event notification to all staff"><i class="ti ti-send" aria-hidden="true"></i></button>';
+    h+='<button class="btn btn-sm sns-remind" data-id="'+e.id+'" title="Send 24h reminder to picked staff"><i class="ti ti-bell" aria-hidden="true"></i></button>';
     h+='<button class="btn btn-sm sns-toggle-status" data-id="'+e.id+'" data-status="'+(e.status||'open')+'">'+((!e.status||e.status==='open')?'Close':'Reopen')+'</button>';
     h+='<button class="btn btn-sm btn-danger sns-del-event" data-id="'+e.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
     h+='</div></div>';
@@ -514,7 +565,8 @@ function renderAdminHours(){
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem"><div class="section-title">Staff Hours</div>';
   h+='<div style="display:flex;gap:6px"><button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button>';
   h+='<button class="btn btn-sm sns-export-weekly"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly Report</button>';
-  h+='<button class="btn btn-sm sns-export-csv"><i class="ti ti-download" aria-hidden="true"></i> Export CSV</button></div></div><div class="divider-line"></div>';
+  h+='<button class="btn btn-sm sns-payroll"><i class="ti ti-cash" aria-hidden="true"></i> Payroll</button>';
+  h+='<button class="btn btn-sm sns-export-csv"><i class="ti ti-download" aria-hidden="true"></i> Hours CSV</button></div></div><div class="divider-line"></div>';
   h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.length+'</div><div class="stat-label">Staff tracked</div></div>';
   h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">Total hours</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:#e6a032">'+active+'</div><div class="stat-label">Clocked in now</div></div></div>';
@@ -736,6 +788,8 @@ function renderEmployee(){
         else h+='<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> 3h logged</span>';
       } else if(isIn)h+='<button class="btn btn-clockout btn-sm sns-clock-out" data-id="'+e.id+'"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out</button>';
       else h+='<button class="btn btn-clock btn-sm sns-clock-in" data-id="'+e.id+'"><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>';
+      if(pb&&pb.selected&&!pb.confirmed)h+='<button class="btn btn-gold btn-sm sns-confirm-shift" data-bid="'+pb.id+'"><i class="ti ti-check" aria-hidden="true"></i> Confirm attendance</button>';
+      if(pb&&pb.confirmed)h+='<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> Confirmed</span>';
       h+='<button class="btn btn-sm sns-change-shift" data-id="'+e.id+'"><i class="ti ti-arrows-exchange" aria-hidden="true"></i> Change shift</button>';
       h+='</div></div>';
     });
@@ -798,8 +852,14 @@ function renderTimeclock(){
   h+='<div class="tc-clock" id="tc-live-clock">--:--:--</div>';
   h+='<div class="tc-date" id="tc-live-date">--</div>';
   h+='<input type="text" class="tc-input" id="tc-name-field" placeholder="Enter your name" value="'+esc(tcName)+'">';
+  if(!activeEntry){
+    h+='<div style="display:flex;gap:8px;margin-bottom:1.25rem;justify-content:center">';
+    h+='<button class="tc-cat-btn'+(state.tcCategory==='Event'?' tc-cat-active':'')+' sns-tc-cat" data-cat="Event" style="flex:1"><i class="ti ti-calendar-event" aria-hidden="true"></i> Event</button>';
+    h+='<button class="tc-cat-btn'+(state.tcCategory==='Admin'?' tc-cat-active':'')+' sns-tc-cat" data-cat="Admin" style="flex:1"><i class="ti ti-clipboard" aria-hidden="true"></i> Admin</button>';
+    h+='</div>';
+  }
   h+='<div class="tc-status"><span class="tc-dot'+(activeEntry?' active':'')+'"></span>';
-  h+='<span>'+(activeEntry?esc(activeEntry.staff_name)+' is currently clocked in':'Enter your name to clock in')+'</span></div>';
+  h+='<span>'+(activeEntry?esc(activeEntry.staff_name)+' is currently clocked in ('+(activeEntry.note||'Event')+')':'Enter your name and select a category')+'</span></div>';
   if(activeEntry){
     h+='<button class="tc-btn tc-btn-out sns-tc-out" data-id="'+activeEntry.id+'" data-name="'+esc(activeEntry.staff_name)+'"><i class="ti ti-player-stop" aria-hidden="true"></i> Clock out &mdash; '+esc(activeEntry.staff_name)+'</button>';
   }else{
@@ -852,9 +912,13 @@ function renderTimeclock(){
           var outTime=t.clocked_out?new Date(t.clocked_out).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
           var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric'}):'';
           var isDrop=t.note&&t.note.startsWith('Drop');
+          var isAdmin=t.note==='Admin';
+          var isEvent=t.note==='Event'||(!t.note&&!isDrop);
           h+='<div class="tc-hist-item" style="padding-left:10px;border-left:2px solid var(--ss-border)">';
           h+='<div style="flex:1;min-width:0"><div class="tc-hi-time" style="margin-top:0">'+inDate+' &middot; '+(isA?'Clocked in '+inTime:inTime+(outTime?' &ndash; '+outTime:''))+'</div></div>';
           h+='<div style="display:flex;align-items:center;gap:6px">';
+          if(isAdmin)h+='<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(150,180,255,.12);color:#96b4ff;border:1px solid rgba(150,180,255,.25);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Admin</span>';
+          else if(isEvent&&!isDrop)h+='<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(46,125,82,.12);color:#66bb8a;border:1px solid rgba(102,187,138,.25);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Event</span>';
           if(isA)h+='<span class="tc-hi-active">Active</span>';
           else if(isDrop)h+='<span class="tc-hi-drop">Drop &middot; 3h</span>';
           else h+='<span class="tc-hi-hrs">'+fmtH(ms)+'</span>';
@@ -1014,6 +1078,15 @@ async function withdrawBid(bidId){
   await fetchAll();render();showToast('Bid withdrawn.');
 }
 
+async function confirmShift(bidId){
+  var res=await db.from('bids').update({confirmed:true}).eq('id',bidId);
+  if(res.error){showToast('Error confirming.',false);return;}
+  await fetchAll();render();showToast('Attendance confirmed!');
+  var bid=state.bids.find(function(b){return b.id===bidId;});
+  var ev=bid?state.events.find(function(e){return e.id===bid.event_id;}):null;
+  if(bid&&ev)await sendEmail(ADMIN_EMAIL,'Pat',bid.staff_name+' confirmed: '+ev.name,bid.staff_name+' has confirmed their attendance for '+ev.name+' on '+fmtDate(ev.date)+'.');
+}
+
 async function dropClockIn(eventId){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
   var existing=state.timeEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
@@ -1056,12 +1129,18 @@ function tcDrop(){
   openDropModal(name);
 }
 
+function setTCCategory(cat){
+  state.tcCategory=cat;
+  render();
+}
+
 async function tcPunchIn(){
   var name=(document.getElementById('tc-name-field')||{}).value;if(name)name=name.trim();
   if(!name){showToast('Please enter your name.',false);return;}
-  var res=await db.from('timeclock').insert({staff_name:name,clocked_in:Date.now(),clocked_out:null,total_ms:0});
+  var cat=state.tcCategory||'Event';
+  var res=await db.from('timeclock').insert({staff_name:name,clocked_in:Date.now(),clocked_out:null,total_ms:0,note:cat});
   if(res.error){showToast('Error clocking in.',false);return;}
-  await fetchAll();render();showToast(name+' clocked in!');
+  await fetchAll();render();showToast(name+' clocked in ('+cat+')!');
 }
 
 async function tcPunchOut(entryId,staffName){
@@ -1144,6 +1223,35 @@ async function removeStaff(staffId,name){
   if(!confirm('Remove '+name+' from the directory?'))return;
   await db.from('staff_directory').update({active:false}).eq('id',staffId);
   await fetchAll();render();showToast(name+' removed.');
+}
+
+async function sendReminderEmails(eventId){
+  var ev=state.events.find(function(e){return e.id===eventId;});
+  if(!ev)return;
+  var picked=state.bids.filter(function(b){return b.event_id===eventId&&b.selected&&b.staff_email;});
+  if(!picked.length){showToast('No staff with emails picked for this event.',false);return;}
+  if(!confirm('Send reminder to '+picked.length+' picked staff for "'+ev.name+'"?'))return;
+  var sent=0;
+  for(var i=0;i<picked.length;i++){
+    var b=picked[i];
+    var role=b.role||'staff';
+    var body='Hi '+b.staff_name+', just a reminder that you are on the schedule'+(ev.date?' tomorrow':'')+'.
+
+Event: '+ev.name+'
+Date: '+fmtDate(ev.date)+(ev.start_time?'
+Time: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+(ev.location?'
+Venue: '+ev.location:'')+(ev.arrival_time?'
+Arrival: '+fmtTime(ev.arrival_time):'')+(ev.address?'
+Address: '+ev.address:'')+'
+Your role: '+role+'
+
+Please clock in through the staff portal when you arrive. If anything has changed, submit a shift request as soon as possible.
+
+— The Shaken & Stirred Team';
+    var ok=await sendEmail(b.staff_email,b.staff_name,'Reminder: you are on the schedule — '+ev.name,body);
+    if(ok)sent++;
+  }
+  showToast(sent>0?'Reminder sent to '+sent+' staff!':'Failed to send reminders — check EmailJS.',sent>0);
 }
 
 async function sendNewEventNotifications(ev){
@@ -1253,6 +1361,64 @@ function exportHours(){
   });
   var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='sns-hours.csv';a.click();
   showToast('Hours exported!');
+}
+
+function openPayrollModal(){
+  var rows=allStaffHours();
+  var rates={};
+  try{rates=JSON.parse(localStorage.getItem('ss-pay-rates')||'{}');}catch(e){}
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-payroll';
+  var h='<div class="modal"><div class="modal-title">Payroll Export <button class="btn btn-sm sns-close-modal" data-modal="modal-payroll"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Set hourly rates for each staff member then export. Rates are saved for next time.</div></div>';
+  h+='<table class="hours-table"><thead><tr><th>Staff</th><th>Hours</th><th>Rate ($/hr)</th><th>Total</th></tr></thead><tbody>';
+  rows.forEach(function(r,i){
+    var rate=rates[r.email||r.name]||0;
+    var total=((r.ms/3600000)*rate).toFixed(2);
+    h+='<tr><td style="font-weight:500;color:var(--ss-cream)">'+esc(r.name)+'</td>';
+    h+='<td style="color:var(--ss-muted)">'+fmtH(r.ms)+'</td>';
+    h+='<td><input type="number" class="pay-rate-input" data-key="'+esc(r.email||r.name)+'" value="'+rate+'" min="0" step="0.50" style="width:80px;padding:4px 8px;font-size:12px"></td>';
+    h+='<td style="color:var(--ss-gold-light);font-weight:500" id="pay-total-'+i+'">$'+total+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-payroll">Cancel</button>';
+  h+='<button class="btn btn-gold sns-do-payroll-export"><i class="ti ti-download" aria-hidden="true"></i> Export CSV</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelectorAll('.pay-rate-input').forEach(function(inp,i){
+    inp.oninput=function(){
+      var rate=parseFloat(inp.value)||0;
+      var row=rows[i];
+      var total=((row.ms/3600000)*rate).toFixed(2);
+      var el=document.getElementById('pay-total-'+i);
+      if(el)el.textContent='$'+total;
+    };
+  });
+  m.querySelector('.sns-do-payroll-export').onclick=function(){
+    var newRates={};
+    m.querySelectorAll('.pay-rate-input').forEach(function(inp){newRates[inp.dataset.key]=parseFloat(inp.value)||0;});
+    try{localStorage.setItem('ss-pay-rates',JSON.stringify(newRates));}catch(e){}
+    var csv='SHAKEN & STIRRED EVENTS - PAYROLL EXPORT
+Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'
+
+';
+    csv+='Staff,Email,Total Hours,Hourly Rate,Total Pay
+';
+    var grandTotal=0;
+    rows.forEach(function(r){
+      var rate=newRates[r.email||r.name]||0;
+      var hrs=(r.ms/3600000);
+      var pay=hrs*rate;
+      grandTotal+=pay;
+      csv+='"'+r.name+'","'+(r.email||'')+'",'+hrs.toFixed(2)+','+rate.toFixed(2)+','+pay.toFixed(2)+'
+';
+    });
+    csv+='
+,,,"Grand Total",$'+grandTotal.toFixed(2)+'
+';
+    var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+    a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';a.click();
+    closeModal('modal-payroll');showToast('Payroll exported!');
+  };
 }
 
 function exportWeeklyReport(){
@@ -1399,8 +1565,13 @@ function openBidsModal(eventId){
   var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;
   var bids=state.bids.filter(function(b){return b.event_id===eventId;});
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-bids';
+  var selectedBids=bids.filter(function(b){return b.selected;});
+  var confCount=selectedBids.filter(function(b){return b.confirmed;}).length;
   var h='<div class="modal"><div class="modal-title"><span>'+esc(e.name)+'</span><button class="btn btn-sm sns-close-modal" data-modal="modal-bids"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
-  h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">'+fmtDate(e.date)+'</div>';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">';
+  h+='<div style="font-size:12px;color:var(--ss-muted)">'+fmtDate(e.date)+'</div>';
+  if(selectedBids.length)h+='<div style="font-size:11px;color:var(--ss-muted)">Confirmed: <span style="color:'+(confCount===selectedBids.length?'#66bb8a':'#e6a032')+';font-weight:500">'+confCount+'/'+selectedBids.length+'</span></div>';
+  h+='</div>';
   function renderBidGroup(role,needs){
     var gb=bids.filter(function(b){return b.role===role;});
     var picked=gb.filter(function(b){return b.selected;}).length;
@@ -1413,7 +1584,7 @@ function openBidsModal(eventId){
       gh+='<div style="min-width:0"><div class="bid-name">'+esc(b.staff_name)+'</div>';
       if(b.staff_email)gh+='<div class="bid-meta"><i class="ti ti-mail" style="font-size:11px"></i> '+esc(b.staff_email)+'</div>';
       if(b.note)gh+='<div class="bid-note">"'+esc(b.note)+'"</div>';
-      if(b.selected)gh+='<div class="my-shift-note"><i class="ti ti-star" aria-hidden="true"></i> Selected</div>';
+      if(b.confirmed)gh+='<div class="my-shift-note"><i class="ti ti-check" aria-hidden="true"></i> <span style="color:#66bb8a">Confirmed</span></div>';else if(b.selected)gh+='<div class="my-shift-note"><i class="ti ti-clock" aria-hidden="true"></i> <span style="color:#e6a032">Awaiting confirmation</span></div>';
       gh+='</div><div style="display:flex;gap:5px;flex-shrink:0">';
       gh+='<button class="btn btn-sm sns-edit-bid-role" data-bid="'+b.id+'" data-name="'+esc(b.staff_name)+'" data-role="'+esc(b.role||'')+'" data-eid="'+eventId+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
       if(b.selected)gh+='<button class="btn btn-sm sns-deselect-bid" data-bid="'+b.id+'" data-eid="'+eventId+'">Remove</button>';
