@@ -120,6 +120,9 @@ textarea{resize:vertical;min-height:64px;}
 .tc-date{font-size:12px;color:var(--ss-muted);margin-bottom:1.5rem;}
 .tc-input{width:100%;font-family:"Inter",sans-serif;font-size:14px;padding:11px 14px;border:1px solid var(--ss-border);border-radius:4px;background:var(--ss-surface2);color:var(--ss-text);text-align:center;margin-bottom:1.25rem;}
 .tc-input::placeholder{color:var(--ss-muted);}
+.export-item{display:flex;align-items:center;gap:8px;width:100%;padding:9px 14px;font-size:12px;font-family:'Inter',sans-serif;background:transparent;border:none;color:var(--ss-text);cursor:pointer;text-align:left;border-bottom:1px solid var(--ss-border);}
+.export-item:last-child{border-bottom:none;}
+.export-item:hover{background:rgba(201,168,76,.08);color:var(--ss-gold);}
 .tc-cat-btn{font-family:'Inter',sans-serif;font-size:12px;padding:8px 14px;border-radius:4px;border:1px solid var(--ss-border);background:transparent;color:var(--ss-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;font-weight:500;}
 .tc-cat-btn:hover{border-color:var(--ss-border-gold);color:var(--ss-gold);}
 .tc-cat-active{background:rgba(201,168,76,.12);color:var(--ss-gold);border-color:var(--ss-border-gold);}
@@ -214,19 +217,18 @@ async function fetchAll(){
     var r=await Promise.all([
       db.from('events').select('*').order('date',{ascending:true}),
       db.from('bids').select('*'),
-      db.from('time_entries').select('*'),
-      db.from('shift_requests').select('*').order('created_at',{ascending:false}),
       db.from('timeclock').select('*').order('clocked_in',{ascending:false}),
+      db.from('shift_requests').select('*').order('created_at',{ascending:false}),
       db.from('staff_directory').select('*').order('name',{ascending:true}),
       db.from('event_reviews').select('*').order('created_at',{ascending:false})
     ]);
     state.events=r[0].data||[];
     state.bids=r[1].data||[];
-    state.timeEntries=r[2].data||[];
+    state.timeclockEntries=r[2].data||[];
+    state.timeEntries=state.timeclockEntries.filter(function(t){return t.event_id;});
     state.shiftRequests=r[3].data||[];
-    state.timeclockEntries=r[4].data||[];
-    state.staffDirectory=(r[5].data||[]).filter(function(s){return s.active;});
-    state.eventReviews=r[6].data||[];
+    state.staffDirectory=(r[4].data||[]).filter(function(s){return s.active;});
+    state.eventReviews=r[5].data||[];
   }catch(e){console.error('fetchAll error',e);}
 }
 
@@ -238,7 +240,9 @@ async function adminLogin(){
   if(res.error){document.getElementById('al-error').textContent='Incorrect username or password.';return;}
   state.adminLoggedIn=true;state.adminSession=res.data.session;
   document.getElementById('settings-btn').style.display='';
-  await fetchAll();render();
+  await fetchAll();
+  // small delay to ensure all data is populated before rendering dashboard
+  render();
 }
 async function adminLogout(){
   await db.auth.signOut();
@@ -267,28 +271,20 @@ function filteredEvents(evs){
 function totalMsForStaff(name,email){
   var em=(email||state.employeeEmail||'').toLowerCase().trim();
   var ms=0;
-  state.timeEntries.forEach(function(t){
-    if(em&&t.staff_email?t.staff_email.toLowerCase().trim()===em:t.staff_name===name)
-      ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-  });
   (state.timeclockEntries||[]).forEach(function(t){
-    if(t.staff_name===name)ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    var match=em&&t.staff_email?t.staff_email.toLowerCase().trim()===em:t.staff_name===name;
+    if(match)ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
   });
   return ms;
 }
 
 function allStaffHours(){
   var map={};
-  state.timeEntries.forEach(function(t){
-    var k=getKey(t.staff_email,t.staff_name);
-    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,events:0};
-    map[k].ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    map[k].events++;
-  });
   (state.timeclockEntries||[]).forEach(function(t){
     var k=getKey(t.staff_email,t.staff_name);
-    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,events:0};
+    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,shifts:0};
     map[k].ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    map[k].shifts++;
   });
   return Object.values(map).sort(function(a,b){return b.ms-a.ms;});
 }
@@ -406,6 +402,7 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-tc-edit').forEach(function(b){b.onclick=function(){openEditTimeclockModal(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-tc-del').forEach(function(b){b.onclick=function(){deleteTimeclockEntry(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-tc-add').forEach(function(b){b.onclick=function(){openAddTimeclockModal();};});
+  mcEl.querySelectorAll('.sns-refresh-dashboard').forEach(function(b){b.onclick=async function(){await fetchAll();render();showToast('Dashboard refreshed!');};});
   document.querySelectorAll('.sns-week-toggle').forEach(function(btn){
     btn.onclick=function(){
       var body=document.getElementById(btn.dataset.target);
@@ -430,6 +427,18 @@ function attachListeners(){
     var en=document.getElementById('emp-name');
     if(en)en.onkeydown=function(e){if(e.key==='Enter')setStaff();};
     document.querySelectorAll('.sns-tc-cat').forEach(function(b){b.onclick=function(){setTCCategory(b.dataset.cat);};});
+    var expBtn=mc().querySelector('.sns-export-menu');
+    if(expBtn){
+      expBtn.onclick=function(e){
+        e.stopPropagation();
+        var dd=document.getElementById('export-dropdown');
+        if(dd)dd.style.display=dd.style.display==='none'?'block':'none';
+      };
+      document.addEventListener('click',function closeExp(){
+        var dd=document.getElementById('export-dropdown');
+        if(dd)dd.style.display='none';
+      },{once:true});
+    }
     var ti=document.getElementById('tc-name-field');
     if(ti){
       ti.oninput=function(){
@@ -444,20 +453,25 @@ function attachListeners(){
 function renderDashboardSummary(){
   var today=new Date();today.setHours(0,0,0,0);
   var weekEnd=new Date(today);weekEnd.setDate(today.getDate()+7);
-  var thisWeekEvents=state.events.filter(function(e){
+  var thisWeekEvents=(state.events||[]).filter(function(e){
     if(!e.date)return false;
     var d=new Date(e.date+'T00:00:00');
     return d>=today&&d<=weekEnd;
   });
   var pendingReqs=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
   var needsStaff=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;}).length;
-  var staffedEvents=thisWeekEvents.filter(function(e){return e.status==='filled';}).length;
   var weekMs=0;
-  var activeNow=state.timeEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
-  state.timeEntries.forEach(function(t){
-    var ev=state.events.find(function(e){return e.id===t.event_id;});
+  var activeNow=(state.timeEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
+  // Count all hours from timeclock for this week
+  (state.timeEntries||[]).forEach(function(t){
+    var ev=(state.events||[]).find(function(e){return e.id===t.event_id;});
     if(!ev||!ev.date)return;
     var d=new Date(ev.date+'T00:00:00');
+    if(d>=today&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+  });
+  (state.timeclockEntries||[]).forEach(function(t){
+    if(!t.clocked_in)return;
+    var d=new Date(t.clocked_in);d.setHours(0,0,0,0);
     if(d>=today&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
   });
   var h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem">';
@@ -465,6 +479,7 @@ function renderDashboardSummary(){
   h+='<div class="stat-card"><div class="stat-val" style="color:'+(pendingReqs>0?'#e6a032':'var(--ss-gold-light)')+'">'+pendingReqs+'</div><div class="stat-label">Pending requests</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:'+(needsStaff>0?'#e57373':'#66bb8a')+'">'+needsStaff+'</div><div class="stat-label">Needs staff</div></div>';
   h+='<div class="stat-card"><div class="stat-val">'+(activeNow>0?'<span style="color:#e6a032">'+activeNow+' active</span>':fmtH(weekMs))+'</div><div class="stat-label">'+(activeNow>0?'Clocked in now':'Hours this week')+'</div></div>';
+  h+='<div style="display:flex;justify-content:flex-end;margin-bottom:.5rem"><button class="btn btn-sm sns-refresh-dashboard" style="font-size:11px;color:var(--ss-muted)"><i class="ti ti-refresh" aria-hidden="true"></i> Refresh</button></div>';
   h+='</div>';
   // Alert for events needing staff this week
   var openThisWeek=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;});
@@ -531,10 +546,24 @@ function renderAdminEvents(){
   h+='</div></div><div class="divider-line"></div>';
   if(!state.adminShowPast)h+=filterBar();
   if(!visible.length)h+='<div class="empty"><i class="ti ti-calendar-off" aria-hidden="true"></i>No events match this filter.</div>';
-  h+='<div class="events-grid">';
+  // Group events by week
+  var weekMap={};var weekOrder=[];
   visible.forEach(function(e){
+    if(!e.date){if(!weekMap['none']){{weekMap['none']={label:'No date',events:[]};weekOrder.push('none');}}weekMap['none'].events.push(e);return;}
+    var ws=getWeekStart(new Date(e.date+'T12:00:00'));
+    var wk=ws.toISOString().split('T')[0];
+    if(!weekMap[wk]){weekMap[wk]={label:fmtWeekLabel(ws),events:[]};weekOrder.push(wk);}
+    weekMap[wk].events.push(e);
+  });
+  weekOrder.forEach(function(wk){
+    var grp=weekMap[wk];
+    h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em;margin:1.25rem 0 .6rem;display:flex;align-items:center;gap:8px">';
+    h+='<span>'+grp.label+'</span>';
+    h+='<span style="height:1px;flex:1;background:linear-gradient(90deg,var(--ss-gold-dim),transparent)"></span></div>';
+    h+='<div class="events-grid">';
+    grp.events.forEach(function(e){
     var bids=state.bids.filter(function(b){return b.event_id===e.id;});
-    var times=state.timeEntries.filter(function(t){return t.event_id===e.id;});
+    var times=state.timeclockEntries.filter(function(t){return t.event_id===e.id;});
     h+='<div class="event-card '+(e.status||'open')+'"'+(e.type==='Drop & Set'?' style="border-top:2px solid var(--ss-gold)"':'')+'>'; 
     h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
     h+='<div>'+(e.type?'<div style="margin-bottom:5px"><span class="event-type-tag">'+esc(e.type)+'</span></div>':'')+
@@ -554,27 +583,33 @@ function renderAdminEvents(){
     h+='<button class="btn btn-sm sns-toggle-status" data-id="'+e.id+'" data-status="'+(e.status||'open')+'">'+((!e.status||e.status==='open')?'Close':'Reopen')+'</button>';
     h+='<button class="btn btn-sm btn-danger sns-del-event" data-id="'+e.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
     h+='</div></div>';
+    });
+    h+='</div>';
   });
-  h+='</div>';return h;
+  return h;
 }
 
 function renderAdminHours(){
   var rows=allStaffHours();
   var totalMs=rows.reduce(function(s,r){return s+r.ms;},0);
-  var active=state.timeEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
+  var active=state.timeclockEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem"><div class="section-title">Staff Hours</div>';
   h+='<div style="display:flex;gap:6px"><button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button>';
-  h+='<button class="btn btn-sm sns-export-weekly"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly Report</button>';
-  h+='<button class="btn btn-sm sns-payroll"><i class="ti ti-cash" aria-hidden="true"></i> Payroll</button>';
-  h+='<button class="btn btn-sm sns-export-csv"><i class="ti ti-download" aria-hidden="true"></i> Hours CSV</button></div></div><div class="divider-line"></div>';
+  h+='<div class="export-wrap" style="position:relative;display:inline-block">';
+  h+='<button class="btn btn-sm sns-export-menu"><i class="ti ti-download" aria-hidden="true"></i> Export <i class="ti ti-chevron-down" style="font-size:11px;margin-left:2px" aria-hidden="true"></i></button>';
+  h+='<div id="export-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-radius:4px;z-index:50;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,.3)">';
+  h+='<button class="sns-export-csv export-item"><i class="ti ti-table" aria-hidden="true"></i> Hours CSV</button>';
+  h+='<button class="sns-export-weekly export-item"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly report</button>';
+  h+='<button class="sns-payroll export-item"><i class="ti ti-cash" aria-hidden="true"></i> Payroll export</button>';
+  h+='</div></div></div></div><div class="divider-line"></div>';
   h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.length+'</div><div class="stat-label">Staff tracked</div></div>';
   h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">Total hours</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:#e6a032">'+active+'</div><div class="stat-label">Clocked in now</div></div></div>';
   if(!rows.length)return h+'<div class="empty"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
-  h+='<table class="hours-table"><thead><tr><th>Staff member</th><th>Events</th><th>Total hours</th><th></th></tr></thead><tbody>';
+  h+='<table class="hours-table"><thead><tr><th>Staff member</th><th>Shifts</th><th>Total hours</th><th></th></tr></thead><tbody>';
   rows.forEach(function(r){
     h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+esc(r.name)+'</div>'+(r.email?'<div style="font-size:11px;color:var(--ss-muted)">'+esc(r.email)+'</div>':'')+'</td>';
-    h+='<td style="color:var(--ss-muted)">'+r.events+'</td><td style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.ms)+'</td>';
+    h+='<td style="color:var(--ss-muted)">'+r.shifts+'</td><td style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.ms)+'</td>';
     h+='<td><button class="btn btn-sm sns-staff-hours" data-name="'+esc(r.name)+'">Details</button></td></tr>';
   });
   h+='</tbody></table>';return h;
@@ -759,7 +794,7 @@ function renderEmployee(){
   var today=new Date();today.setHours(0,0,0,0);
   var openEvents=filteredEvents(state.events.filter(function(e){return(!e.status||e.status==='open')&&(!e.date||new Date(e.date+'T00:00:00')>=today);}));
   var totalMs=totalMsForStaff(state.employeeName,state.employeeEmail);
-  var activeClock=state.timeEntries.find(function(t){return(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName)&&t.clocked_in&&!t.clocked_out;});
+  var activeClock=state.timeclockEntries.find(function(t){return(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName)&&t.clocked_in&&!t.clocked_out&&t.event_id;});
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">';
   h+='<div><div style="font-family:\'Playfair Display\',serif;font-size:18px;color:var(--ss-cream)">Welcome, '+esc(state.employeeName)+'</div>';
   h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+esc(state.employeeEmail)+'</div></div>';
@@ -770,9 +805,14 @@ function renderEmployee(){
     h+='<div class="divider-line" style="margin-bottom:.75rem"></div><div style="display:flex;flex-direction:column;gap:8px">';
     myPickedEvents.forEach(function(e){
       var pb=myPickedBids.find(function(b){return b.event_id===e.id;});
-      var te=state.timeEntries.find(function(t){return t.event_id===e.id&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
+      var te=state.timeclockEntries.find(function(t){return t.event_id===e.id&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
       var isIn=te&&te.clocked_in&&!te.clocked_out;
       var logged=te?((te.total_ms||0)+(isIn?Date.now()-te.clocked_in:0)):0;
+      // Also check timeclock table for Drop & Set drops
+      if(!logged&&e.type==='Drop & Set'){
+        var tcDrop=(state.timeclockEntries||[]).find(function(t){return t.staff_name===state.employeeName&&t.note&&t.note.indexOf(e.name)>=0;});
+        if(tcDrop)logged=tcDrop.total_ms||0;
+      }
       h+='<div class="event-card '+(isIn?'open':'filled')+'" style="border-left-color:'+(isIn?'#e6a032':'var(--ss-gold-dim)')+'">';
       h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
       h+='<div>'+(e.type?'<span class="event-type-tag" style="display:inline-flex;margin-bottom:4px">'+esc(e.type)+'</span><br>':'')+
@@ -790,7 +830,7 @@ function renderEmployee(){
       else h+='<button class="btn btn-clock btn-sm sns-clock-in" data-id="'+e.id+'"><i class="ti ti-player-play" aria-hidden="true"></i> Clock in</button>';
       if(pb&&pb.selected&&!pb.confirmed)h+='<button class="btn btn-gold btn-sm sns-confirm-shift" data-bid="'+pb.id+'"><i class="ti ti-check" aria-hidden="true"></i> Confirm attendance</button>';
       if(pb&&pb.confirmed)h+='<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i> Confirmed</span>';
-      h+='<button class="btn btn-sm sns-change-shift" data-id="'+e.id+'"><i class="ti ti-arrows-exchange" aria-hidden="true"></i> Change shift</button>';
+      h+='<button class="btn btn-sm sns-change-shift" data-id="'+e.id+'"><i class="ti ti-arrows-exchange" aria-hidden="true"></i> Request change</button>';
       h+='</div></div>';
     });
     h+='</div>';
@@ -815,8 +855,9 @@ function renderEmployee(){
     if(myBid)h+='<button class="btn btn-sm btn-danger sns-withdraw" data-id="'+myBid.id+'"><i class="ti ti-x" aria-hidden="true"></i> Withdraw</button>';
     else h+='<button class="btn btn-gold btn-sm sns-bid" data-id="'+e.id+'"><i class="ti ti-hand-click" aria-hidden="true"></i> Bid for shift</button>';
     h+='</div></div>';
-  });
-  h+='</div>';return h;
+    });
+    h+='</div>';
+  return h;
 }
 
 function renderStaffLogin(){
@@ -1087,39 +1128,33 @@ async function confirmShift(bidId){
   if(bid&&ev)await sendEmail(ADMIN_EMAIL,'Pat',bid.staff_name+' confirmed: '+ev.name,bid.staff_name+' has confirmed their attendance for '+ev.name+' on '+fmtDate(ev.date)+'.');
 }
 
-async function dropClockIn(eventId){
-  var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var existing=state.timeEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
-  if(existing&&existing.total_ms>0){showToast('Already logged for this event.',false);return;}
-  var pb=state.bids.find(function(b){return b.event_id===eventId&&b.staff_name===state.employeeName&&b.selected;});
-  var threeH=3*60*60*1000;
-  var now=Date.now();
+function dropClockIn(eventId){
   var ev=state.events.find(function(e){return e.id===eventId;});
-  var noteStr='Drop & Set — 3h'+(ev?' | '+ev.name:'');
-  if(existing){
-    await db.from('time_entries').update({clocked_in:null,clocked_out:now,total_ms:threeH}).eq('id',existing.id);
-  }else{
-    await db.from('time_entries').insert({event_id:eventId,staff_name:state.employeeName,staff_email:state.employeeEmail,role:pb?pb.role:null,clocked_in:null,clocked_out:now,total_ms:threeH,note:noteStr});
-  }
-  await fetchAll();render();showToast('3h logged for Drop & Set!');
+  var name=state.employeeName;
+  if(!name){showToast('Please log in first.',false);return;}
+  openDropModal(name,ev);
 }
 
 async function clockIn(eventId){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var existing=state.timeEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
+  var existing=state.timeclockEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
   if(existing&&existing.clocked_in&&!existing.clocked_out){showToast('Already clocked in.',false);return;}
   var pb=state.bids.find(function(b){return b.event_id===eventId&&b.staff_name===state.employeeName&&b.selected;});
-  if(existing)await db.from('time_entries').update({clocked_in:Date.now(),clocked_out:null}).eq('id',existing.id);
-  else await db.from('time_entries').insert({event_id:eventId,staff_name:state.employeeName,staff_email:state.employeeEmail,role:pb?pb.role:null,clocked_in:Date.now(),clocked_out:null,total_ms:0});
+  var ev=state.events.find(function(e){return e.id===eventId;});
+  if(existing){
+    await db.from('timeclock').update({clocked_in:Date.now(),clocked_out:null,total_ms:0}).eq('id',existing.id);
+  }else{
+    await db.from('timeclock').insert({event_id:eventId,staff_name:state.employeeName,staff_email:state.employeeEmail,role:pb?pb.role:null,clocked_in:Date.now(),clocked_out:null,total_ms:0,note:'Event'+(ev?' | '+ev.name:'')});
+  }
   await fetchAll();render();showToast('Clocked in!');
 }
 
 async function clockOut(eventId){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var te=state.timeEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
-  if(!te||!te.clocked_in){showToast('Not clocked in.',false);return;}
+  var te=state.timeclockEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName)&&t.clocked_in&&!t.clocked_out;});
+  if(!te){showToast('Not clocked in.',false);return;}
   var ms=Date.now()-te.clocked_in;
-  await db.from('time_entries').update({clocked_out:Date.now(),total_ms:(te.total_ms||0)+ms,clocked_in:null}).eq('id',te.id);
+  await db.from('timeclock').update({clocked_out:Date.now(),total_ms:(te.total_ms||0)+ms,clocked_in:null}).eq('id',te.id);
   await fetchAll();render();showToast('Clocked out — '+fmtH(ms)+' logged.');
 }
 
@@ -1177,12 +1212,29 @@ async function submitShiftRequest(eventId){
 async function resolveRequest(requestId,status){
   var r=(state.shiftRequests||[]).find(function(sr){return sr.id===requestId;});if(!r)return;
   var ev=state.events.find(function(e){return e.id===r.event_id;});
-  await db.from('shift_requests').update({status:status}).eq('id',requestId);
+  // Delete resolved requests after 24h — for now remove immediately on deny, keep approved briefly
+  if(status==='denied'){
+    await db.from('shift_requests').delete().eq('id',requestId);
+  } else {
+    await db.from('shift_requests').update({status:status}).eq('id',requestId);
+  }
   if(status==='approved'){
     if(r.request_type==='giveup'){
       var bid=state.bids.find(function(b){return b.event_id===r.event_id&&b.staff_name===r.requester_name&&b.selected;});
       if(bid){await db.from('bids').update({selected:false}).eq('id',bid.id);if(ev&&ev.status==='filled')await db.from('events').update({status:'open'}).eq('id',r.event_id);}
       if(r.requester_email&&ev)await sendEmail(r.requester_email,r.requester_name,'Shift give-up approved: '+ev.name,'Hi '+r.requester_name+', your give-up request for '+ev.name+' has been approved. — The Shaken & Stirred Team');
+      // Repost event to all staff in directory
+      if(ev){
+        await db.from('events').update({status:'open'}).eq('id',r.event_id);
+        var staff=state.staffDirectory||[];
+        for(var si=0;si<staff.length;si++){
+          var sm=staff[si];
+          if(sm.email===r.requester_email)continue;
+          var sb='Hi '+sm.name+', a shift has opened up on '+ev.name+' ('+fmtDate(ev.date)+(ev.start_time?' at '+fmtTime(ev.start_time):'')+').'+(ev.location?' Venue: '+ev.location+'.':'')+' Log in to the staff portal to bid. — The Shaken & Stirred Team';
+          await sendEmail(sm.email,sm.name,'Shift available: '+ev.name,sb);
+        }
+        showToast('Give-up approved — event reposted to staff!');
+      }
     }else if(r.request_type==='swap'){
       var rb=state.bids.find(function(b){return b.event_id===r.event_id&&b.staff_name===r.requester_name&&b.selected;});
       if(rb)await db.from('bids').update({selected:false}).eq('id',rb.id);
@@ -1335,102 +1387,38 @@ async function saveEditedBidRole(bidId,eventId){
 function exportHours(){
   var rows=allStaffHours();
   if(!rows.length){showToast('No hours to export.',false);return;}
-  var csv='Employee,Email,Events,Total Hours\n';
-  rows.forEach(function(r){csv+='"'+r.name+'","'+r.email+'",'+r.events+','+(r.ms/3600000).toFixed(2)+'\n';});
-  csv+='\nEvent Breakdown\nEmployee,Event,Role,Date,Hours\n';
-  state.timeEntries.forEach(function(t){
-    var ev=state.events.find(function(e){return e.id===t.event_id;});
-    var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    csv+='"'+t.staff_name+'","'+(ev?ev.name:t.event_id)+'","'+(t.role||'')+'","'+(ev?ev.date:'')+'","'+(ms/3600000).toFixed(2)+'\n';
-  });
+  var csv='Employee,Email,Shifts,Total Hours\n';
+  rows.forEach(function(r){csv+='"'+r.name+'","'+r.email+'",'+r.shifts+','+(r.ms/3600000).toFixed(2)+'\n';});
+  csv+='\nDetail\nEmployee,Event/Note,Role,Category,Date,Hours\n';
   (state.timeclockEntries||[]).forEach(function(t){
+    var ev=t.event_id?state.events.find(function(e){return e.id===t.event_id;}):null;
     var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    csv+='"'+t.staff_name+'","Time Clock","'+(t.note||'')+'","'+(t.clocked_in?new Date(t.clocked_in).toLocaleDateString():'')+'","'+(ms/3600000).toFixed(2)+'\n';
+    var label=ev?ev.name:(t.note||'Timeclock');
+    var cat=t.event_id?'Event':(t.note?t.note.split(' | ')[0]:'General');
+    var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString():(ev?ev.date:'');
+    csv+='"'+t.staff_name+'","'+label+'","'+(t.role||'')+'","'+cat+'","'+date+'","'+(ms/3600000).toFixed(2)+'\n';
   });
   var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='sns-hours.csv';a.click();
   showToast('Hours exported!');
 }
-
-function openPayrollModal(){
-  var rows=allStaffHours();
-  var rates={};
-  try{rates=JSON.parse(localStorage.getItem('ss-pay-rates')||'{}');}catch(e){}
-  var m=document.createElement('div');m.className='modal-bg';m.id='modal-payroll';
-  var h='<div class="modal"><div class="modal-title">Payroll Export <button class="btn btn-sm sns-close-modal" data-modal="modal-payroll"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
-  h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Set hourly rates for each staff member then export. Rates are saved for next time.</div></div>';
-  h+='<table class="hours-table"><thead><tr><th>Staff</th><th>Hours</th><th>Rate ($/hr)</th><th>Total</th></tr></thead><tbody>';
-  rows.forEach(function(r,i){
-    var rate=rates[r.email||r.name]||0;
-    var total=((r.ms/3600000)*rate).toFixed(2);
-    h+='<tr><td style="font-weight:500;color:var(--ss-cream)">'+esc(r.name)+'</td>';
-    h+='<td style="color:var(--ss-muted)">'+fmtH(r.ms)+'</td>';
-    h+='<td><input type="number" class="pay-rate-input" data-key="'+esc(r.email||r.name)+'" value="'+rate+'" min="0" step="0.50" style="width:80px;padding:4px 8px;font-size:12px"></td>';
-    h+='<td style="color:var(--ss-gold-light);font-weight:500" id="pay-total-'+i+'">$'+total+'</td></tr>';
-  });
-  h+='</tbody></table>';
-  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-payroll">Cancel</button>';
-  h+='<button class="btn btn-gold sns-do-payroll-export"><i class="ti ti-download" aria-hidden="true"></i> Export CSV</button></div></div>';
-  m.innerHTML=h;document.body.appendChild(m);
-  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
-  m.querySelectorAll('.pay-rate-input').forEach(function(inp,i){
-    inp.oninput=function(){
-      var rate=parseFloat(inp.value)||0;
-      var row=rows[i];
-      var total=((row.ms/3600000)*rate).toFixed(2);
-      var el=document.getElementById('pay-total-'+i);
-      if(el)el.textContent='$'+total;
-    };
-  });
-  m.querySelector('.sns-do-payroll-export').onclick=function(){
-    var newRates={};
-    m.querySelectorAll('.pay-rate-input').forEach(function(inp){newRates[inp.dataset.key]=parseFloat(inp.value)||0;});
-    try{localStorage.setItem('ss-pay-rates',JSON.stringify(newRates));}catch(e){}
-    var csv='SHAKEN & STIRRED EVENTS - PAYROLL EXPORT\nGenerated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'})+'\n\n';
-    csv+='Staff,Email,Total Hours,Hourly Rate,Total Pay\n';
-    var grandTotal=0;
-    rows.forEach(function(r){
-      var rate=newRates[r.email||r.name]||0;
-      var hrs=(r.ms/3600000);
-      var pay=hrs*rate;
-      grandTotal+=pay;
-      csv+='"'+r.name+'","'+(r.email||'')+'",'+hrs.toFixed(2)+','+rate.toFixed(2)+','+pay.toFixed(2)+'\n';
-    });
-    csv+='\n,,,"Grand Total",$'+grandTotal.toFixed(2)+'\n';
-    var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
-    a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';a.click();
-    closeModal('modal-payroll');showToast('Payroll exported!');
-  };
-}
-
 function exportWeeklyReport(){
-  var hasData=state.timeEntries.length||(state.timeclockEntries||[]).length;
+  var hasData=(state.timeclockEntries||[]).length;
   if(!hasData){showToast('No hours to export.',false);return;}
   var weekMap={};
-  state.timeEntries.forEach(function(t){
-    var ev=state.events.find(function(e){return e.id===t.event_id;});
-    if(!ev||!ev.date)return;
-    var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    if(!ms)return;
-    var ws=getWeekStart(new Date(ev.date+'T12:00:00'));
-    var wk=ws.toISOString().split('T')[0];
-    if(!weekMap[wk])weekMap[wk]={label:fmtWeekLabel(ws),staff:{}};
-    var k=getKey(t.staff_email,t.staff_name);
-    if(!weekMap[wk].staff[k])weekMap[wk].staff[k]={name:t.staff_name,email:t.staff_email||'',roles:{},totalMs:0};
-    weekMap[wk].staff[k].totalMs+=ms;
-    var role=t.role||'Unspecified';
-    weekMap[wk].staff[k].roles[role]=(weekMap[wk].staff[k].roles[role]||0)+ms;
-  });
   (state.timeclockEntries||[]).forEach(function(t){
     if(!t.clocked_in)return;
     var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
     if(!ms)return;
-    var ws=getWeekStart(new Date(t.clocked_in));
+    var ev=t.event_id?state.events.find(function(e){return e.id===t.event_id;}):null;
+    var dateTs=ev?new Date(ev.date+'T12:00:00').getTime():t.clocked_in;
+    var ws=getWeekStart(new Date(dateTs));
     var wk=ws.toISOString().split('T')[0];
     if(!weekMap[wk])weekMap[wk]={label:fmtWeekLabel(ws),staff:{}};
     var k=getKey(t.staff_email,t.staff_name);
     if(!weekMap[wk].staff[k])weekMap[wk].staff[k]={name:t.staff_name,email:t.staff_email||'',roles:{},totalMs:0};
     weekMap[wk].staff[k].totalMs+=ms;
-    weekMap[wk].staff[k].roles['Time Clock']=(weekMap[wk].staff[k].roles['Time Clock']||0)+ms;
+    var role=t.role||(t.note?t.note.split(' | ')[0]:'General');
+    weekMap[wk].staff[k].roles[role]=(weekMap[wk].staff[k].roles[role]||0)+ms;
   });
   var weeks=Object.keys(weekMap).sort();
   if(!weeks.length){showToast('No hours data found.',false);return;}
@@ -1639,7 +1627,7 @@ function openBidModal(eventId){
 
 function openEventHoursModal(eventId){
   var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;
-  var entries=state.timeEntries.filter(function(t){return t.event_id===eventId;});
+  var entries=state.timeclockEntries.filter(function(t){return t.event_id===eventId;});
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-ehours';
   var h='<div class="modal"><div class="modal-title"><span>'+esc(e.name)+' \u2014 Hours</span><button class="btn btn-sm sns-close-modal" data-modal="modal-ehours"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   if(!entries.length)h+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No one has clocked in yet.</div>';
@@ -1662,8 +1650,12 @@ function openEventHoursModal(eventId){
 
 function openStaffHoursModal(name){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var entries=state.timeEntries.filter(function(t){return myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name;});
-  var tcEntries=(state.timeclockEntries||[]).filter(function(t){return t.staff_name===name;});
+  // All entries now in timeclock — split by event_id presence for display
+  var allEntries=(state.timeclockEntries||[]).filter(function(t){
+    return myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name;
+  });
+  var entries=allEntries.filter(function(t){return t.event_id;});
+  var tcEntries=allEntries.filter(function(t){return !t.event_id;});
   var totalMs=totalMsForStaff(name);
   var m=document.createElement('div');
   m.className='modal-bg';
@@ -1689,9 +1681,26 @@ function openStaffHoursModal(name){
     addToWeek(t.clocked_in||Date.now(),t);
   });
 
-  var h='<div class="modal"><div class="modal-title"><span>'+esc(name)+' — Hours</span>';
-  h+='<button class="btn btn-sm sns-close-modal" data-modal="modal-staffhours"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
-  h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:1.25rem">Total: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(totalMs)+'</span></div>';
+
+  // Calculate Admin vs Event breakdown from timeclock entries
+  var adminMs=0;var eventMs=0;
+  tcEntries.forEach(function(t){
+    var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    if(t.note==='Admin')adminMs+=ms;
+    else if(!t.note||t.note==='Event'||t.note.startsWith('Drop'))eventMs+=ms;
+  });
+  entries.forEach(function(t){
+    var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    eventMs+=ms;
+  });
+
+  h+='<div style="display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">';
+  h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center">';
+  h+='<div style="font-size:18px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(totalMs)+'</div>';
+  h+='<div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Total</div></div>';
+  if(eventMs)h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:500;color:#66bb8a">'+fmtH(eventMs)+'</div><div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Event</div></div>';
+  if(adminMs)h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:500;color:#96b4ff">'+fmtH(adminMs)+'</div><div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Admin</div></div>';
+  h+='</div>';
 
   if(!entries.length&&!tcEntries.length){
     h+='<div class="empty" style="padding:1rem"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
@@ -1766,7 +1775,7 @@ function openStaffHoursModal(name){
 }
 
 function openEditHoursModal(entryId,staffName,currentHrs){
-  var t=state.timeEntries.find(function(te){return te.id===entryId;});if(!t)return;
+  var t=state.timeclockEntries.find(function(te){return te.id===entryId;});if(!t)return;
   var ev=state.events.find(function(e){return e.id===t.event_id;});
   var h2=parseFloat(currentHrs)||0;var hrs=Math.floor(h2);var mins=Math.round((h2%1)*60);
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-edithours';
@@ -1783,7 +1792,7 @@ function openEditHoursModal(entryId,staffName,currentHrs){
     var eh=parseFloat(document.getElementById('eh-hours').value)||0;
     var em=parseFloat(document.getElementById('eh-mins').value)||0;
     var totalMs=Math.round((eh*60+em)*60000);
-    await db.from('time_entries').update({total_ms:totalMs,clocked_in:null,clocked_out:Date.now()}).eq('id',entryId);
+    await db.from('timeclock').update({total_ms:totalMs,clocked_in:null,clocked_out:Date.now()}).eq('id',entryId);
     closeModal('modal-edithours');closeModal('modal-staffhours');
     await fetchAll();render();openStaffHoursModal(staffName);showToast('Hours updated!');
   };
@@ -1791,7 +1800,7 @@ function openEditHoursModal(entryId,staffName,currentHrs){
 
 async function deleteHoursEntry(entryId,staffName){
   if(!confirm('Delete this hours entry?'))return;
-  await db.from('time_entries').delete().eq('id',entryId);
+  await db.from('timeclock').delete().eq('id',entryId);
   closeModal('modal-staffhours');await fetchAll();render();openStaffHoursModal(staffName);showToast('Deleted.');
 }
 
@@ -1918,16 +1927,18 @@ function openEditTimeclockModal(entryId){
   };
 }
 
-function openDropModal(staffName){
+function openDropModal(staffName,prefillEvent){
   var today=new Date().toISOString().split('T')[0];
+  var prefillName=prefillEvent?prefillEvent.name:'';
+  var prefillDate=prefillEvent?prefillEvent.date:today;
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-drop';
   var h='<div class="modal"><div class="modal-title">Log Drop Shift <button class="btn btn-sm sns-close-modal" data-modal="modal-drop"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem">';
   h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:2px">Staff member</div>';
   h+='<div style="font-size:14px;font-weight:500;color:var(--ss-cream)">'+esc(staffName)+'</div></div>';
   h+='<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3);border-radius:3px;padding:3px 10px;font-size:11px;color:var(--ss-gold);font-weight:500;margin-bottom:1rem"><i class="ti ti-clock-plus" aria-hidden="true"></i>3 hours will be logged</div>';
-  h+='<div class="form-group"><label class="form-label">Event name</label><input type="text" id="drop-event" placeholder="e.g. Smith Wedding\u2026"></div>';
-  h+='<div class="form-group"><label class="form-label">Date of drop</label><input type="date" id="drop-date" value="'+today+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Event name</label><input type="text" id="drop-event" value="'+esc(prefillName)+'" placeholder="e.g. Smith Wedding\u2026"'+(prefillName?' readonly style="opacity:.7"':'')+'>'+( prefillName?'<div style="font-size:11px;color:var(--ss-muted);margin-top:3px">Pre-filled from event</div>':'')+' </div>';
+  h+='<div class="form-group"><label class="form-label">Date of drop</label><input type="date" id="drop-date" value="'+(prefillDate||today)+'"></div>';
   h+='<div class="form-group"><label class="form-label">Notes <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="drop-notes" style="min-height:60px"></textarea></div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-drop">Cancel</button><button class="btn btn-gold sns-do-drop"><i class="ti ti-clock-plus" aria-hidden="true"></i> Log 3h drop</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
@@ -1970,7 +1981,6 @@ function waitForDeps(cb,attempts){
 }
 
 waitForDeps(init);
-
 </script>
 </body>
 </html>
