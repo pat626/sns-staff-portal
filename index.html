@@ -452,27 +452,28 @@ function attachListeners(){
 
 function renderDashboardSummary(){
   var today=new Date();today.setHours(0,0,0,0);
-  var weekEnd=new Date(today);weekEnd.setDate(today.getDate()+7);
+  var weekStart=getWeekStart(today);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+7);
   var thisWeekEvents=(state.events||[]).filter(function(e){
     if(!e.date)return false;
     var d=new Date(e.date+'T00:00:00');
-    return d>=today&&d<=weekEnd;
+    return d>=weekStart&&d<=weekEnd;
   });
   var pendingReqs=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
   var needsStaff=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;}).length;
   var weekMs=0;
-  var activeNow=(state.timeEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
-  // Count all hours from timeclock for this week
-  (state.timeEntries||[]).forEach(function(t){
-    var ev=(state.events||[]).find(function(e){return e.id===t.event_id;});
-    if(!ev||!ev.date)return;
-    var d=new Date(ev.date+'T00:00:00');
-    if(d>=today&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+  var activeNow=(state.timeclockEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
+  // Count all hours from timeclock for this week (Mon-Sun)
+  (state.timeclockEntries||[]).forEach(function(t){
+    var ev=t.event_id?(state.events||[]).find(function(e){return e.id===t.event_id;}):null;
+    var d=ev?new Date(ev.date+'T00:00:00'):new Date(t.clocked_in);
+    d.setHours(0,0,0,0);
+    if(d>=weekStart&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
   });
   (state.timeclockEntries||[]).forEach(function(t){
     if(!t.clocked_in)return;
     var d=new Date(t.clocked_in);d.setHours(0,0,0,0);
-    if(d>=today&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    if(d>=weekStart&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
   });
   var h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem">';
   h+='<div class="stat-card"><div class="stat-val">'+thisWeekEvents.length+'</div><div class="stat-label">Events this week</div></div>';
