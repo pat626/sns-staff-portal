@@ -281,13 +281,22 @@ function totalMsForStaff(name,email){
 
 function allStaffHours(){
   var map={};
+  var today=new Date();today.setHours(0,0,0,0);
+  var weekStart=getWeekStart(today);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+7);
   (state.timeclockEntries||[]).forEach(function(t){
     var k=getKey(t.staff_email,t.staff_name);
-    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,shifts:0};
-    map[k].ms+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,weekMs:0,shifts:0};
+    var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    map[k].ms+=ms;
     map[k].shifts++;
+    // Check if this entry falls in current week
+    var ev=t.event_id?(state.events||[]).find(function(e){return e.id===t.event_id;}):null;
+    var d=ev?new Date(ev.date+'T00:00:00'):new Date(t.clocked_in);
+    if(d)d.setHours(0,0,0,0);
+    if(d&&d>=weekStart&&d<=weekEnd)map[k].weekMs+=ms;
   });
-  return Object.values(map).sort(function(a,b){return b.ms-a.ms;});
+  return Object.values(map).sort(function(a,b){return b.weekMs-a.weekMs;});
 }
 
 function getWeekStart(date){
@@ -438,11 +447,15 @@ function attachListeners(){
         var dd=document.getElementById('export-dropdown');
         if(dd)dd.style.display=dd.style.display==='none'?'block':'none';
       };
-      document.addEventListener('click',function closeExp(){
-        var dd=document.getElementById('export-dropdown');
-        if(dd)dd.style.display='none';
-      },{once:true});
     }
+    // Close export dropdown when clicking outside it
+    document.addEventListener('click',function(e){
+      var dd=document.getElementById('export-dropdown');
+      if(dd&&dd.style.display!=='none'){
+        var wrap=dd.closest?dd.closest('.export-wrap'):null;
+        if(!wrap||!wrap.contains(e.target))dd.style.display='none';
+      }
+    });
     var ti=document.getElementById('tc-name-field');
     if(ti){
       ti.oninput=function(){
@@ -596,7 +609,7 @@ function renderAdminEvents(){
 
 function renderAdminHours(){
   var rows=allStaffHours();
-  var totalMs=rows.reduce(function(s,r){return s+r.ms;},0);
+  var totalMs=rows.reduce(function(s,r){return s+r.weekMs;},0);
   var active=state.timeclockEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem"><div class="section-title">Staff Hours</div>';
   h+='<div style="display:flex;gap:6px"><button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button>';
@@ -608,13 +621,13 @@ function renderAdminHours(){
   h+='<button class="sns-payroll export-item"><i class="ti ti-cash" aria-hidden="true"></i> Payroll export</button>';
   h+='</div></div></div></div><div class="divider-line"></div>';
   h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.length+'</div><div class="stat-label">Staff tracked</div></div>';
-  h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">Total hours</div></div>';
+  h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">Hours this week</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:#e6a032">'+active+'</div><div class="stat-label">Clocked in now</div></div></div>';
   if(!rows.length)return h+'<div class="empty"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
   h+='<table class="hours-table"><thead><tr><th>Staff member</th><th>Shifts</th><th>Total hours</th><th></th></tr></thead><tbody>';
   rows.forEach(function(r){
     h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+esc(r.name)+'</div>'+(r.email?'<div style="font-size:11px;color:var(--ss-muted)">'+esc(r.email)+'</div>':'')+'</td>';
-    h+='<td style="color:var(--ss-muted)">'+r.shifts+'</td><td style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.ms)+'</td>';
+    h+='<td style="color:var(--ss-muted)">'+r.shifts+'</td><td><div style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.weekMs)+'</div><div style="font-size:10px;color:var(--ss-muted)">'+fmtH(r.ms)+' total</div></td>';
     h+='<td><button class="btn btn-sm sns-staff-hours" data-name="'+esc(r.name)+'">Details</button></td></tr>';
   });
   h+='</tbody></table>';return h;
