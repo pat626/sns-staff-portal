@@ -485,14 +485,10 @@ function renderDashboardSummary(){
   var activeNow=(state.timeclockEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
   // Count all hours from timeclock for this week (Mon-Sun)
   (state.timeclockEntries||[]).forEach(function(t){
+    if(!t.clocked_in)return;
     var ev=t.event_id?(state.events||[]).find(function(e){return e.id===t.event_id;}):null;
     var d=ev?new Date(ev.date+'T00:00:00'):new Date(t.clocked_in);
     d.setHours(0,0,0,0);
-    if(d>=weekStart&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-  });
-  (state.timeclockEntries||[]).forEach(function(t){
-    if(!t.clocked_in)return;
-    var d=new Date(t.clocked_in);d.setHours(0,0,0,0);
     if(d>=weekStart&&d<=weekEnd)weekMs+=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
   });
   var h='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem">';
