@@ -181,7 +181,7 @@ var state={
   employeeName:'',employeeEmail:'',
   events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],
   dateFilter:'upcoming',adminTab:'events',adminShowPast:false,reviewingEventId:null,
-  ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event'
+  ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event',hoursWeekOffset:0
 };
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -282,11 +282,12 @@ function totalMsForStaff(name,email){
 function allStaffHours(){
   var map={};
   var today=new Date();today.setHours(0,0,0,0);
-  var weekStart=getWeekStart(today);
+  var baseMonday=getWeekStart(today);
+  var weekStart=new Date(baseMonday);weekStart.setDate(baseMonday.getDate()+(state.hoursWeekOffset||0)*7);
   var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+7);
   (state.timeclockEntries||[]).forEach(function(t){
     var k=getKey(t.staff_email,t.staff_name);
-    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,weekMs:0,shifts:0};
+    if(!map[k])map[k]={name:t.staff_name,email:t.staff_email||'',ms:0,weekMs:0,shifts:0,weekShifts:0};
     var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
     map[k].ms+=ms;
     map[k].shifts++;
@@ -294,7 +295,7 @@ function allStaffHours(){
     var ev=t.event_id?(state.events||[]).find(function(e){return e.id===t.event_id;}):null;
     var d=ev?new Date(ev.date+'T00:00:00'):new Date(t.clocked_in);
     if(d)d.setHours(0,0,0,0);
-    if(d&&d>=weekStart&&d<=weekEnd)map[k].weekMs+=ms;
+    if(d&&d>=weekStart&&d<=weekEnd){map[k].weekMs+=ms;map[k].weekShifts++;}
   });
   return Object.values(map).sort(function(a,b){return b.weekMs-a.weekMs;});
 }
@@ -416,6 +417,8 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-tc-del').forEach(function(b){b.onclick=function(){deleteTimeclockEntry(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-tc-add').forEach(function(b){b.onclick=function(){openAddTimeclockModal();};});
   mcEl.querySelectorAll('.sns-refresh-dashboard').forEach(function(b){b.onclick=async function(){await fetchAll();render();showToast('Dashboard refreshed!');};});
+  mcEl.querySelectorAll('.sns-week-prev').forEach(function(b){b.onclick=function(){state.hoursWeekOffset=(state.hoursWeekOffset||0)-1;render();};});
+  mcEl.querySelectorAll('.sns-week-next').forEach(function(b){b.onclick=function(){if((state.hoursWeekOffset||0)<0){state.hoursWeekOffset=(state.hoursWeekOffset||0)+1;render();}};});
   document.querySelectorAll('.sns-week-toggle').forEach(function(btn){
     btn.onclick=function(){
       var body=document.getElementById(btn.dataset.target);
@@ -611,8 +614,19 @@ function renderAdminHours(){
   var rows=allStaffHours();
   var totalMs=rows.reduce(function(s,r){return s+r.weekMs;},0);
   var active=state.timeclockEntries.filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
+  var today2=new Date();today2.setHours(0,0,0,0);
+  var dispMonday=getWeekStart(today2);
+  dispMonday.setDate(dispMonday.getDate()+(state.hoursWeekOffset||0)*7);
+  var dispSunday=new Date(dispMonday);dispSunday.setDate(dispMonday.getDate()+6);
+  var dispLabel=dispMonday.toLocaleDateString([],{month:'short',day:'numeric'})+' – '+dispSunday.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+  var isCurrentWeek=(state.hoursWeekOffset||0)===0;
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem"><div class="section-title">Staff Hours</div>';
-  h+='<div style="display:flex;gap:6px"><button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button>';
+  h+='<div style="display:flex;gap:6px;align-items:center"><button class="btn btn-sm sns-logout"><i class="ti ti-logout" aria-hidden="true"></i> Sign out</button>';
+  h+='<div style="display:flex;align-items:center;gap:4px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:3px 8px">';
+  h+='<button class="btn btn-sm sns-week-prev" style="padding:2px 6px;border:none;font-size:13px" title="Previous week"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>';
+  h+='<span style="font-size:11px;color:var(--ss-text);min-width:140px;text-align:center">'+dispLabel+'</span>';
+  h+='<button class="btn btn-sm sns-week-next" style="padding:2px 6px;border:none;font-size:13px"'+(isCurrentWeek?' disabled title="Current week"':' title="Next week"')+'><i class="ti ti-chevron-right" aria-hidden="true"></i></button>';
+  h+='</div>';
   h+='<div class="export-wrap" style="position:relative;display:inline-block">';
   h+='<button class="btn btn-sm sns-export-menu"><i class="ti ti-download" aria-hidden="true"></i> Export <i class="ti ti-chevron-down" style="font-size:11px;margin-left:2px" aria-hidden="true"></i></button>';
   h+='<div id="export-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-radius:4px;z-index:50;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,.3)">';
@@ -620,14 +634,14 @@ function renderAdminHours(){
   h+='<button class="sns-export-weekly export-item"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly report</button>';
   h+='<button class="sns-payroll export-item"><i class="ti ti-cash" aria-hidden="true"></i> Payroll export</button>';
   h+='</div></div></div></div><div class="divider-line"></div>';
-  h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.length+'</div><div class="stat-label">Staff tracked</div></div>';
-  h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">Hours this week</div></div>';
+  h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.filter(function(r){return r.weekMs>0;}).length+'</div><div class="stat-label">Staff this week</div></div>';
+  h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">'+(isCurrentWeek?'Hours this week':'Hours that week')+'</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:#e6a032">'+active+'</div><div class="stat-label">Clocked in now</div></div></div>';
   if(!rows.length)return h+'<div class="empty"><i class="ti ti-clock-off" aria-hidden="true"></i>No hours logged yet.</div>';
   h+='<table class="hours-table"><thead><tr><th>Staff member</th><th>Shifts</th><th>Total hours</th><th></th></tr></thead><tbody>';
   rows.forEach(function(r){
     h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+esc(r.name)+'</div>'+(r.email?'<div style="font-size:11px;color:var(--ss-muted)">'+esc(r.email)+'</div>':'')+'</td>';
-    h+='<td style="color:var(--ss-muted)">'+r.shifts+'</td><td><div style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.weekMs)+'</div><div style="font-size:10px;color:var(--ss-muted)">'+fmtH(r.ms)+' total</div></td>';
+    h+='<td style="color:var(--ss-muted)">'+r.weekShifts+'</td><td><div style="font-weight:500;color:var(--ss-gold-light)">'+fmtH(r.weekMs)+'</div><div style="font-size:10px;color:var(--ss-muted)">'+fmtH(r.ms)+' total</div></td>';
     h+='<td><button class="btn btn-sm sns-staff-hours" data-name="'+esc(r.name)+'">Details</button></td></tr>';
   });
   h+='</tbody></table>';return h;
