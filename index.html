@@ -248,6 +248,7 @@ async function adminLogout(){
   await db.auth.signOut();
   state.adminLoggedIn=false;state.adminSession=null;
   document.getElementById('settings-btn').style.display='none';
+  if(state.view==='timeclock'||state.view==='admin')state.view='employee';
   render();
 }
 
@@ -347,9 +348,12 @@ function render(){
   document.getElementById('btn-admin').classList.toggle('active',state.view==='admin');
   document.getElementById('btn-employee').classList.toggle('active',state.view==='employee');
   document.getElementById('btn-timeclock').classList.toggle('active',state.view==='timeclock');
+  // Time Clock tab only visible to admin
+  document.getElementById('btn-timeclock').style.display=state.adminLoggedIn?'':'none';
   var mc=document.getElementById('main-content');
   if(state.view==='admin')mc.innerHTML=renderAdmin();
-  else if(state.view==='timeclock')mc.innerHTML=renderTimeclock();
+  else if(state.view==='timeclock'&&state.adminLoggedIn)mc.innerHTML=renderTimeclock();
+  else if(state.view==='timeclock'){state.view='employee';mc.innerHTML=renderEmployee();}
   else mc.innerHTML=renderEmployee();
   if(state.view==='timeclock')startTCClock();
   attachListeners();
