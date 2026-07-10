@@ -1654,14 +1654,28 @@ function openEventHoursModal(eventId){
 }
 
 function openStaffHoursModal(name){
+  // When called from admin, match by name. When called from staff view, also match by email.
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  // All entries now in timeclock — split by event_id presence for display
   var allEntries=(state.timeclockEntries||[]).filter(function(t){
-    return myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===name;
+    var nameMatch=t.staff_name===name;
+    var emailMatch=myEm&&t.staff_email&&t.staff_email.toLowerCase().trim()===myEm;
+    return nameMatch||emailMatch;
   });
   var entries=allEntries.filter(function(t){return t.event_id;});
   var tcEntries=allEntries.filter(function(t){return !t.event_id;});
   var totalMs=totalMsForStaff(name);
+  // Calculate this week's hours
+  var today=new Date();today.setHours(0,0,0,0);
+  var weekStart=getWeekStart(today);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+7);
+  var thisWeekMs=allEntries.reduce(function(sum,t){
+    var ev=t.event_id?(state.events||[]).find(function(e){return e.id===t.event_id;}):null;
+    var d=ev?new Date(ev.date+'T00:00:00'):new Date(t.clocked_in);
+    d.setHours(0,0,0,0);
+    if(d>=weekStart&&d<=weekEnd)
+      return sum+(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
+    return sum;
+  },0);
   var m=document.createElement('div');
   m.className='modal-bg';
   m.id='modal-staffhours';
@@ -1701,8 +1715,8 @@ function openStaffHoursModal(name){
 
   h+='<div style="display:flex;gap:10px;margin-bottom:1.25rem;flex-wrap:wrap">';
   h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center">';
-  h+='<div style="font-size:18px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(totalMs)+'</div>';
-  h+='<div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Total</div></div>';
+  h+='<div style="font-size:18px;font-weight:500;color:var(--ss-gold-light)">'+fmtH(thisWeekMs)+'</div>';
+  h+='<div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">This week</div></div>';
   if(eventMs)h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:500;color:#66bb8a">'+fmtH(eventMs)+'</div><div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Event</div></div>';
   if(adminMs)h+='<div style="flex:1;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:8px 12px;text-align:center"><div style="font-size:18px;font-weight:500;color:#96b4ff">'+fmtH(adminMs)+'</div><div style="font-size:10px;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Admin</div></div>';
   h+='</div>';
