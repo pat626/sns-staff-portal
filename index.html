@@ -1116,7 +1116,8 @@ async function selectBid(bidId,eventId,role,needs){
   var bid=state.bids.find(function(b){return b.id===bidId;});
   if(bid&&bid.staff_email){
     var ev3=state.events.find(function(ev){return ev.id===eventId;});
-    var body='Hi '+bid.staff_name+', you have been selected to work '+ev3.name+' on '+ev3.date+(ev3.start_time?' at '+fmtTime(ev3.start_time):'')+'. '+(ev3.location?'Venue: '+ev3.location+'. ':'')+'Please clock in through the staff portal when you arrive. — The Shaken & Stirred Team';
+    var confirmUrl='https://fxiufkfxbtjupmfdtboh.supabase.co/functions/v1/confirm-attendance?bid='+bid.id;
+    var body='Hi '+bid.staff_name+', you have been selected to work '+ev3.name+' on '+fmtDate(ev3.date)+(ev3.start_time?' at '+fmtTime(ev3.start_time):'')+'. '+(ev3.location?'Venue: '+ev3.location+'. ':'')+'\n\nPlease confirm your attendance by clicking the link below:\n'+confirmUrl+'\n\nOnce confirmed, please clock in through the staff portal when you arrive. — The Shaken & Stirred Team';
     var sent=await sendEmail(bid.staff_email,bid.staff_name,'You are on the schedule: '+ev3.name,body);
     showToast(sent?'Confirmation sent to '+bid.staff_name+'!':bid.staff_name+' selected — email failed.',sent);
   }else showToast((bid?bid.staff_name:'Staff')+' added to schedule.');
