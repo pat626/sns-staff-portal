@@ -1412,22 +1412,71 @@ async function saveEditedBidRole(bidId,eventId){
   closeModal('modal-bids');openBidsModal(eventId);render();showToast('Role updated!');
 }
 
+function getPayPeriod(ts){
+  var anchor=new Date('2025-07-06T00:00:00').getTime();
+  var periodMs=14*24*60*60*1000;
+  var diff=ts-anchor;
+  var periodNum=Math.floor(diff/periodMs);
+  var start=new Date(anchor+periodNum*periodMs);
+  var end=new Date(start.getTime()+periodMs-1);
+  return {start:start,end:end,num:periodNum};
+}
+function fmtPayPeriod(pp){
+  var opts={month:'short',day:'numeric',year:'numeric'};
+  return pp.start.toLocaleDateString([],opts)+' – '+pp.end.toLocaleDateString([],opts);
+}
+
 function exportHours(){
-  var rows=allStaffHours();
-  if(!rows.length){showToast('No hours to export.',false);return;}
-  var csv='Employee,Email,Shifts,Total Hours\n';
-  rows.forEach(function(r){csv+='"'+r.name+'","'+r.email+'",'+r.shifts+','+(r.ms/3600000).toFixed(2)+'\n';});
-  csv+='\nDetail\nEmployee,Event/Note,Role,Category,Date,Hours\n';
-  (state.timeclockEntries||[]).forEach(function(t){
-    var ev=t.event_id?state.events.find(function(e){return e.id===t.event_id;}):null;
+  var entries=state.timeclockEntries||[];
+  if(!entries.length){showToast('No hours to export.',false);return;}
+  var ppMap={};var ppOrder=[];
+  entries.forEach(function(t){
+    if(!t.clocked_in)return;
     var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);
-    var label=ev?ev.name:(t.note||'Timeclock');
-    var cat=t.event_id?'Event':(t.note?t.note.split(' | ')[0]:'General');
-    var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString():(ev?ev.date:'');
-    csv+='"'+t.staff_name+'","'+label+'","'+(t.role||'')+'","'+cat+'","'+date+'","'+(ms/3600000).toFixed(2)+'\n';
+    if(!ms)return;
+    var ev=t.event_id?state.events.find(function(e){return e.id===t.event_id;}):null;
+    var dateTs=ev&&ev.date?new Date(ev.date+'T12:00:00').getTime():t.clocked_in;
+    var pp=getPayPeriod(dateTs);
+    var ppKey=pp.num;
+    if(!ppMap[ppKey]){ppMap[ppKey]={label:fmtPayPeriod(pp),staff:{},totalMs:0};ppOrder.push(ppKey);}
+    var k=getKey(t.staff_email,t.staff_name);
+    if(!ppMap[ppKey].staff[k])ppMap[ppKey].staff[k]={name:t.staff_name,email:t.staff_email||'',entries:[],totalMs:0};
+    ppMap[ppKey].staff[k].entries.push({entry:t,ms:ms,ev:ev});
+    ppMap[ppKey].staff[k].totalMs+=ms;
+    ppMap[ppKey].totalMs+=ms;
   });
-  var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='sns-hours.csv';a.click();
-  showToast('Hours exported!');
+  ppOrder.sort(function(a,b){return b-a;});
+  var lines=[];
+  lines.push('SHAKEN & STIRRED EVENTS');
+  lines.push('PAYROLL EXPORT');
+  lines.push('Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'}));
+  ppOrder.forEach(function(ppKey){
+    var pp=ppMap[ppKey];
+    lines.push('');
+    lines.push('========================================');
+    lines.push('PAY PERIOD: '+pp.label);
+    lines.push('========================================');
+    lines.push('Employee,Email,Type,Event/Note,Role,Date,Hours');
+    var staffList=Object.values(pp.staff).sort(function(a,b){return a.name.localeCompare(b.name);});
+    staffList.forEach(function(s){
+      s.entries.forEach(function(item){
+        var t=item.entry;var ev=item.ev;
+        var label=ev?ev.name:(t.note&&t.note!=='Event'&&t.note!=='Admin'?t.note.replace(/^Drop[^|]*\| /,''):'');
+        var type=t.event_id?'Event':(t.note==='Admin'?'Admin':t.note&&t.note.startsWith('Drop')?'Drop & Set':'General');
+        var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
+        lines.push('"'+s.name+'","'+(s.email||'')+'","'+type+'","'+label+'","'+(t.role||'')+'","'+date+'","'+(item.ms/3600000).toFixed(2)+'"');
+      });
+      lines.push('"'+s.name+'","","","","","SUBTOTAL","'+(s.totalMs/3600000).toFixed(2)+'"');
+      lines.push('');
+    });
+    lines.push('"","","","","","PAY PERIOD TOTAL","'+(pp.totalMs/3600000).toFixed(2)+'"');
+  });
+  var csv=lines.join('\n');
+  var a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';
+  a.click();
+  showToast('Payroll export downloaded!');
 }
 function exportWeeklyReport(){
   var hasData=(state.timeclockEntries||[]).length;
@@ -1917,26 +1966,39 @@ function openEditStaffModal(staffId){
 
 function openAddTimeclockModal(){
   var today=new Date().toISOString().split('T')[0];
+  var upcomingEvents=state.events.filter(function(e){return e.date;}).sort(function(a,b){return a.date>b.date?-1:1;}).slice(0,20);
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-add';
   var h='<div class="modal"><div class="modal-title">Add Time Entry <button class="btn btn-sm sns-close-modal" data-modal="modal-tc-add"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   h+='<div class="form-group"><label class="form-label">Staff name</label><input type="text" id="tca-name" placeholder="Jane Smith"></div>';
+  h+='<div class="form-group"><label class="form-label">Type</label><select id="tca-type"><option value="Event">Event</option><option value="Admin">Admin</option><option value="Drop">Drop & Set</option></select></div>';
+  h+='<div id="tca-event-wrap" class="form-group"><label class="form-label">Linked event <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>';
+  h+='<select id="tca-event"><option value="">— None —</option>';
+  upcomingEvents.forEach(function(e){h+='<option value="'+e.id+'">'+esc(e.name)+' ('+fmtDate(e.date)+')</option>';});
+  h+='</select></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="tca-date" value="'+today+'"></div><div class="form-group"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Clock in</label><input type="time" id="tca-in"></div><div class="form-group"><label class="form-label">Clock out</label><input type="time" id="tca-out"></div></div>';
-  h+='<div class="form-group"><label class="form-label">Note</label><input type="text" id="tca-note" placeholder="e.g. Forgot to clock in"></div>';
+  h+='<div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="text" id="tca-note" placeholder="e.g. Forgot to clock in"></div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-tc-add">Cancel</button><button class="btn btn-gold sns-do-tc-add"><i class="ti ti-plus" aria-hidden="true"></i> Add entry</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  // Show/hide event picker based on type
+  var typeEl=m.querySelector('#tca-type');
+  var evWrap=m.querySelector('#tca-event-wrap');
+  if(typeEl)typeEl.onchange=function(){evWrap.style.display=typeEl.value==='Admin'?'none':'block';};
   m.querySelector('.sns-do-tc-add').onclick=async function(){
     var name=(document.getElementById('tca-name')||{}).value;if(name)name=name.trim();
     var date=(document.getElementById('tca-date')||{}).value;
     var inTime=(document.getElementById('tca-in')||{}).value;
     var outTime=(document.getElementById('tca-out')||{}).value;
     var note=(document.getElementById('tca-note')||{}).value;if(note)note=note.trim();
+    var type=(document.getElementById('tca-type')||{}).value||'Event';
+    var eventId=(document.getElementById('tca-event')||{}).value||null;
     if(!name||!date||!inTime){showToast('Name, date and clock-in time required.',false);return;}
     var ci=new Date(date+'T'+inTime).getTime();
     var co=outTime?new Date(date+'T'+outTime).getTime():null;
     if(co&&co<=ci){showToast('Clock-out must be after clock-in.',false);return;}
-    await db.from('timeclock').insert({staff_name:name,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:note||null});
+    var noteStr=note||type;
+    await db.from('timeclock').insert({staff_name:name,event_id:eventId||null,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:noteStr});
     closeModal('modal-tc-add');await fetchAll();render();showToast('Entry added!');
   };
 }
@@ -1945,26 +2007,44 @@ function openEditTimeclockModal(entryId){
   var t=(state.timeclockEntries||[]).find(function(e){return e.id===entryId;});if(!t)return;
   function toDS(ts){if(!ts)return'';return new Date(ts).toISOString().split('T')[0];}
   function toTS(ts){if(!ts)return'';var d=new Date(ts);return pad(d.getHours())+':'+pad(d.getMinutes());}
+  var upcomingEvents=state.events.filter(function(e){return e.date;}).sort(function(a,b){return a.date>b.date?-1:1;}).slice(0,20);
+  // Determine current type from note
+  var currentType='Event';
+  if(t.note==='Admin')currentType='Admin';
+  else if(t.note&&t.note.startsWith('Drop'))currentType='Drop';
   var m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-edit';
   var h='<div class="modal"><div class="modal-title">Edit Time Entry <button class="btn btn-sm sns-close-modal" data-modal="modal-tc-edit"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
   h+='<div class="form-group"><label class="form-label">Staff name</label><input type="text" id="tce-name" value="'+esc(t.staff_name)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Type</label><select id="tce-type">';
+  ['Event','Admin','Drop'].forEach(function(tp){h+='<option value="'+tp+'"'+(currentType===tp?' selected':'')+'>'+tp+(tp==='Drop'?' & Set':'')+'</option>';});
+  h+='</select></div>';
+  h+='<div id="tce-event-wrap" class="form-group" style="display:'+(currentType==='Admin'?'none':'block')+'"><label class="form-label">Linked event <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label>';
+  h+='<select id="tce-event"><option value="">— None —</option>';
+  upcomingEvents.forEach(function(e){h+='<option value="'+e.id+'"'+(t.event_id===e.id?' selected':'')+'>'+esc(e.name)+' ('+fmtDate(e.date)+')</option>';});
+  h+='</select></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="tce-date" value="'+toDS(t.clocked_in)+'"></div><div class="form-group"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Clock in</label><input type="time" id="tce-in" value="'+toTS(t.clocked_in)+'"></div><div class="form-group"><label class="form-label">Clock out</label><input type="time" id="tce-out" value="'+toTS(t.clocked_out)+'"></div></div>';
-  h+='<div class="form-group"><label class="form-label">Note</label><input type="text" id="tce-note" value="'+esc(t.note||'')+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="text" id="tce-note" value="'+esc(t.note&&t.note!=='Admin'&&t.note!=='Event'?t.note:'')+'"></div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-tc-edit">Cancel</button><button class="btn btn-gold sns-do-tc-edit"><i class="ti ti-check" aria-hidden="true"></i> Save</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  var typeEl=m.querySelector('#tce-type');
+  var evWrap=m.querySelector('#tce-event-wrap');
+  if(typeEl)typeEl.onchange=function(){evWrap.style.display=typeEl.value==='Admin'?'none':'block';};
   m.querySelector('.sns-do-tc-edit').onclick=async function(){
     var name=(document.getElementById('tce-name')||{}).value;if(name)name=name.trim();
     var date=(document.getElementById('tce-date')||{}).value;
     var inTime=(document.getElementById('tce-in')||{}).value;
     var outTime=(document.getElementById('tce-out')||{}).value;
     var note=(document.getElementById('tce-note')||{}).value;if(note)note=note.trim();
+    var type=(document.getElementById('tce-type')||{}).value||'Event';
+    var eventId=(document.getElementById('tce-event')||{}).value||null;
     if(!name||!date||!inTime){showToast('Name, date and clock-in time required.',false);return;}
     var ci=new Date(date+'T'+inTime).getTime();
     var co=outTime?new Date(date+'T'+outTime).getTime():null;
     if(co&&co<=ci){showToast('Clock-out must be after clock-in.',false);return;}
-    await db.from('timeclock').update({staff_name:name,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:note||null}).eq('id',entryId);
+    var noteStr=note||type;
+    await db.from('timeclock').update({staff_name:name,event_id:eventId||null,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:noteStr}).eq('id',entryId);
     closeModal('modal-tc-edit');await fetchAll();render();showToast('Entry updated!');
   };
 }
