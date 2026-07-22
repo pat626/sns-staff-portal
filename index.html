@@ -829,8 +829,8 @@ function renderEmployee(){
   h+='<div style="display:flex;gap:6px;align-items:center">'+(activeClock?'<span class="clock-active-pill"><span class="gold-dot"></span> Clocked in</span>':'');
   h+='<button class="btn btn-sm sns-change-name"><i class="ti ti-edit" aria-hidden="true"></i> Change</button></div></div>';
   var today2=new Date();today2.setHours(0,0,0,0);
-  var upcomingPicked=myPickedEvents.filter(function(e){return!e.date||new Date(e.date+'T00:00:00')>=today3;});
   var today3=new Date();today3.setHours(0,0,0,0);
+  var upcomingPicked=myPickedEvents.filter(function(e){return!e.date||new Date(e.date+'T00:00:00')>=today3;});
   var pastPicked=myPickedEvents.filter(function(e){return e.date&&new Date(e.date+'T00:00:00')<today3;});
   if(myPickedEvents.length){
     h+='<div style="margin-bottom:2rem"><div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">Your upcoming shifts</div>';
