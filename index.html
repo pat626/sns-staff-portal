@@ -1042,10 +1042,18 @@ async function uploadEventPDF(fileInput, eventId){
   if(!file)return null;
   var ext=file.name.split('.').pop();
   var path='event-'+eventId+'-'+Date.now()+'.'+ext;
+  showToast('Uploading document...');
   var res=await db.storage.from('event-documents').upload(path,file,{upsert:true});
-  if(res.error){console.warn('PDF upload error',res.error);return null;}
+  if(res.error){
+    console.error('PDF upload error',res.error);
+    showToast('Document upload failed: '+(res.error.message||'Storage error'),false);
+    return null;
+  }
   var urlRes=db.storage.from('event-documents').getPublicUrl(path);
-  return urlRes.data.publicUrl;
+  var url=urlRes.data&&urlRes.data.publicUrl?urlRes.data.publicUrl:null;
+  if(!url){showToast('Could not get document URL',false);return null;}
+  showToast('Document uploaded!');
+  return url;
 }
 
 async function postNewEvent(){
