@@ -1081,10 +1081,20 @@ async function postNewEvent(){
   if(res.error){showToast('Error: '+(res.error.message||'unknown'),false);return;}
   var newEvent=res.data&&res.data[0]?res.data[0]:null;
   if(newEvent){
-    var pdfInput=document.getElementById('c-pdf');
-    if(pdfInput&&pdfInput.files&&pdfInput.files[0]){
-      var pdfUrl=await uploadEventPDF(pdfInput,newEvent.id);
-      if(pdfUrl)await db.from('events').update({document_url:pdfUrl}).eq('id',newEvent.id);
+    var pdfInputC=document.getElementById('c-pdf');
+    if(pdfInputC&&pdfInputC.files&&pdfInputC.files[0]){
+      var pdfFileC=pdfInputC.files[0];
+      var extC=pdfFileC.name.split('.').pop();
+      var pathC='event-'+newEvent.id+'-'+Date.now()+'.'+extC;
+      showToast('Uploading document...');
+      var uploadResC=await db.storage.from('event-documents').upload(pathC,pdfFileC,{upsert:true});
+      if(uploadResC.error){
+        showToast('Document upload failed: '+(uploadResC.error.message||'Storage error'),false);
+      } else {
+        var urlResC=db.storage.from('event-documents').getPublicUrl(pathC);
+        var pdfUrlC=urlResC.data&&urlResC.data.publicUrl?urlResC.data.publicUrl:null;
+        if(pdfUrlC)await db.from('events').update({document_url:pdfUrlC}).eq('id',newEvent.id);
+      }
     }
   }
   closeModal('modal-create');await fetchAll();
@@ -1097,6 +1107,10 @@ async function updateEvent(eventId){
   var name=document.getElementById('e-name').value.trim();
   var date=document.getElementById('e-date').value;
   if(!name||!date){showToast('Name and date are required.',false);return;}
+  // Read file BEFORE any async ops - files property can be lost after await
+  var pdfFile=null;
+  var pdfInputEl=document.getElementById('e-pdf');
+  if(pdfInputEl&&pdfInputEl.files&&pdfInputEl.files[0])pdfFile=pdfInputEl.files[0];
   var res=await db.from('events').update({name:name,date:date,
     type:document.getElementById('e-type').value||null,
     start_time:document.getElementById('e-start').value||null,
@@ -1111,10 +1125,21 @@ async function updateEvent(eventId){
     address:document.getElementById('e-address')?document.getElementById('e-address').value.trim()||null:null
   }).eq('id',eventId);
   if(res.error){showToast('Error saving.',false);return;}
-  var pdfInput2=document.getElementById('e-pdf');
-  if(pdfInput2&&pdfInput2.files&&pdfInput2.files[0]){
-    var pdfUrl2=await uploadEventPDF(pdfInput2,eventId);
-    if(pdfUrl2)await db.from('events').update({document_url:pdfUrl2}).eq('id',eventId);
+  if(pdfFile){
+    var ext2=pdfFile.name.split('.').pop();
+    var path2='event-'+eventId+'-'+Date.now()+'.'+ext2;
+    showToast('Uploading document...');
+    var uploadRes=await db.storage.from('event-documents').upload(path2,pdfFile,{upsert:true});
+    if(uploadRes.error){
+      showToast('Document upload failed: '+(uploadRes.error.message||'Storage error'),false);
+    } else {
+      var urlRes2=db.storage.from('event-documents').getPublicUrl(path2);
+      var pdfUrl2=urlRes2.data&&urlRes2.data.publicUrl?urlRes2.data.publicUrl:null;
+      if(pdfUrl2){
+        await db.from('events').update({document_url:pdfUrl2}).eq('id',eventId);
+        showToast('Document uploaded!');
+      }
+    }
   }
   closeModal('modal-edit');await fetchAll();render();showToast('Event updated!');
 }
