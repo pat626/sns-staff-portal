@@ -868,19 +868,20 @@ function renderEmployee(){
     h+='</div>';
     if(totalMs)h+='<div style="font-size:12px;color:var(--ss-muted);margin-top:10px;text-align:right">Total hours: <span style="color:var(--ss-gold-light);font-weight:500">'+fmtH(totalMs)+'</span></div>';
     h+='</div>';
-    // Past shifts with documents
-    var pastWithDocs=pastPicked.filter(function(e){return e.document_url;});
-    if(pastWithDocs.length){
-      h+='<div style="font-size:10px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.1em;margin:.75rem 0 .5rem">Past shift documents</div>';
-      h+='<div style="display:flex;flex-direction:column;gap:6px">';
-      pastWithDocs.forEach(function(e){
-        h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border);border-radius:4px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px">';
-        h+='<div><div style="font-size:13px;font-weight:500;color:var(--ss-cream)">'+esc(e.name)+'</div><div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+fmtDate(e.date)+'</div></div>';
-        h+='<a href="'+esc(e.document_url)+'" target="_blank" class="btn btn-sm"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> View</a>';
-        h+='</div>';
-      });
+  }
+  // Past shifts with documents - shown regardless of upcoming shifts
+  var pastWithDocs=(pastPicked||[]).filter(function(e){return e.document_url;});
+  if(pastWithDocs.length){
+    h+='<div style="margin-bottom:1.5rem"><div style="font-size:10px;font-weight:500;color:var(--ss-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem">Past shift documents</div>';
+    h+='<div class="divider-line" style="margin-bottom:.5rem"></div>';
+    h+='<div style="display:flex;flex-direction:column;gap:6px">';
+    pastWithDocs.forEach(function(e){
+      h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border);border-radius:4px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px">';
+      h+='<div><div style="font-size:13px;font-weight:500;color:var(--ss-cream)">'+esc(e.name)+'</div><div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+fmtDate(e.date)+'</div></div>';
+      h+='<a href="'+esc(e.document_url)+'" target="_blank" class="btn btn-sm btn-gold"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> View</a>';
       h+='</div>';
-    }
+    });
+    h+='</div></div>';
   }
   h+='<div class="section-header"><div class="section-title">Open Events</div></div><div class="divider-line"></div>'+filterBar();
   var shown=openEvents.filter(function(e){return myPickedIds.indexOf(e.id)<0;});
