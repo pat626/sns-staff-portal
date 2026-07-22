@@ -1107,10 +1107,14 @@ async function updateEvent(eventId){
   var name=document.getElementById('e-name').value.trim();
   var date=document.getElementById('e-date').value;
   if(!name||!date){showToast('Name and date are required.',false);return;}
-  // Read file BEFORE any async ops - files property can be lost after await
+  // Read file BEFORE any async ops
   var pdfFile=null;
   var pdfInputEl=document.getElementById('e-pdf');
+  console.log('PDF input element:', pdfInputEl);
+  console.log('PDF files:', pdfInputEl&&pdfInputEl.files);
+  console.log('PDF file[0]:', pdfInputEl&&pdfInputEl.files&&pdfInputEl.files[0]);
   if(pdfInputEl&&pdfInputEl.files&&pdfInputEl.files[0])pdfFile=pdfInputEl.files[0];
+  console.log('pdfFile captured:', pdfFile);
   var res=await db.from('events').update({name:name,date:date,
     type:document.getElementById('e-type').value||null,
     start_time:document.getElementById('e-start').value||null,
