@@ -532,7 +532,7 @@ function renderAdmin(){
   if(!ejsOk)h+='<div class="info-box"><i class="ti ti-mail-off" aria-hidden="true"></i><div>Email notifications not configured. Click Settings to set up EmailJS.</div></div>';
   h+=renderDashboardSummary();
   h+='<div class="tabs">';
-  [['events','Events','ti-calendar-event'],['hours','Hours','ti-clock'],['requests','Requests','ti-arrows-exchange'],['staff','Staff','ti-users'],['reviews','Reviews','ti-clipboard-check']].forEach(function(t){
+  [['events','Events','ti-calendar-event'],['hours','Hours','ti-clock'],['requests','Requests','ti-arrows-exchange'],['staff','Staff','ti-users'],['announcements','Board','ti-speakerphone'],['reviews','Reviews','ti-clipboard-check']].forEach(function(t){
     var badge=t[0]==='requests'&&pc>0?' <span style="background:#e57373;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pc+'</span>':'';
     h+='<button class="tab'+(state.adminTab===t[0]?' active':'')+' sns-tab" data-tab="'+t[0]+'"><i class="ti '+t[2]+'" aria-hidden="true"></i> '+t[1]+badge+'</button>';
   });
