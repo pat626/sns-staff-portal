@@ -1201,18 +1201,34 @@ function openNewAnnouncementModal(){
   h+='<div class="form-group"><label class="form-label">Title</label><input type="text" id="ann-title" placeholder="e.g. Dress code reminder"></div>';
   h+='<div class="form-group"><label class="form-label">Message</label><textarea id="ann-body" placeholder="Write your announcement here..." style="min-height:100px"></textarea></div>';
   h+='<div class="form-group"><label class="form-label">Target <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(leave blank for all staff)</span></label>';
-  h+='<select id="ann-target"><option value="">All staff</option>';
-  staff.forEach(function(s){h+='<option value="'+esc(s.email)+'">'+esc(s.name)+'</option>';});
-  h+='</select></div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:8px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:10px" id="ann-target-wrap">';
+  h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-muted);cursor:pointer;width:100%"><input type="checkbox" id="ann-all" checked> All staff</label>';
+  staff.forEach(function(s){
+    h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-text);cursor:pointer">';
+  h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-muted);cursor:pointer;width:100%"><input type="checkbox" id="ann-all" checked> All staff</label>';
+  });
+  h+='</div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-announcement">Cancel</button><button class="btn btn-gold sns-do-announcement"><i class="ti ti-speakerphone" aria-hidden="true"></i> Post</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  var annAllCb=m.querySelector('#ann-all');
+  m.querySelectorAll('.ann-staff-cb').forEach(function(cb){
+    cb.onchange=function(){if(cb.checked&&annAllCb)annAllCb.checked=false;};
+  });
+    h+='<input type="checkbox" class="ann-staff-cb" value="'+esc(s.email)+'"> '+esc(s.name)+'</label>';
   m.querySelector('.sns-do-announcement').onclick=async function(){
     var title=(document.getElementById('ann-title')||{}).value;if(title)title=title.trim();
     var body=(document.getElementById('ann-body')||{}).value;if(body)body=body.trim();
-    var target=(document.getElementById('ann-target')||{}).value||null;
     if(!title||!body){showToast('Title and message are required.',false);return;}
-    await db.from('announcements').insert({title:title,body:body,target_email:target});
+    var allChecked=document.getElementById('ann-all')&&document.getElementById('ann-all').checked;
+    var targets=[];
+    if(!allChecked){
+      document.querySelectorAll('.ann-staff-cb:checked').forEach(function(c){targets.push(c.value);});
+    }
+    if(!allChecked&&!targets.length){showToast('Select at least one target or choose All staff.',false);return;}
+    // Insert one announcement per target, or one with null for all staff
+    var inserts=allChecked?[{title:title,body:body,target_email:null}]:targets.map(function(t){return{title:title,body:body,target_email:t};});
+    await db.from('announcements').insert(inserts);
     closeModal('modal-announcement');await fetchAll();render();showToast('Announcement posted!');
   };
 }
@@ -2261,7 +2277,6 @@ function waitForDeps(cb,attempts){
   else{document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-alert-circle" aria-hidden="true"></i>Failed to load required scripts. Please refresh.</div>';}
 }
 
-waitForDeps(init);
-</script>
+waitForDeps(init);</script>
 </body>
 </html>
