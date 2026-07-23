@@ -220,7 +220,8 @@ async function fetchAll(){
       db.from('timeclock').select('*').order('clocked_in',{ascending:false}),
       db.from('shift_requests').select('*').order('created_at',{ascending:false}),
       db.from('staff_directory').select('*').order('name',{ascending:true}),
-      db.from('event_reviews').select('*').order('created_at',{ascending:false})
+      db.from('event_reviews').select('*').order('created_at',{ascending:false}),
+      db.from('announcements').select('*').order('created_at',{ascending:false})
     ]);
     state.events=r[0].data||[];
     state.bids=r[1].data||[];
@@ -229,6 +230,7 @@ async function fetchAll(){
     state.shiftRequests=r[3].data||[];
     state.staffDirectory=(r[4].data||[]).filter(function(s){return s.active;});
     state.eventReviews=r[5].data||[];
+    state.announcements=r[6].data||[];
   }catch(e){console.error('fetchAll error',e);}
 }
 
@@ -345,8 +347,9 @@ function filterBar(){
 
 function eventMetaHTML(e){
   var h='<div class="event-meta">';
-  h+='<div class="event-meta-row"><i class="ti ti-calendar" aria-hidden="true"></i>'+fmtDate(e.date)+(e.start_time?' &middot; '+fmtTime(e.start_time)+(e.end_time?' &ndash; '+fmtTime(e.end_time):''):'')+'</div>';
-  if(e.arrival_time)h+='<div class="event-meta-row"><i class="ti ti-clock" aria-hidden="true"></i>Arrival: '+fmtTime(e.arrival_time)+'</div>';
+  h+='<div class="event-meta-row"><i class="ti ti-calendar" aria-hidden="true"></i>'+fmtDate(e.date)+'</div>';
+  if(e.arrival_time)h+='<div class="event-meta-row"><i class="ti ti-clock" aria-hidden="true"></i><span style="color:var(--ss-gold)">Staff arrival:</span> '+fmtTime(e.arrival_time)+'</div>';
+  if(e.start_time)h+='<div class="event-meta-row"><i class="ti ti-player-play" aria-hidden="true"></i><span style="color:var(--ss-muted)">Event:</span> '+fmtTime(e.start_time)+(e.end_time?' &ndash; '+fmtTime(e.end_time):'')+'</div>';
   if(e.address)h+='<div class="event-meta-row"><i class="ti ti-map-2" aria-hidden="true"></i>'+esc(e.address)+'</div>';
   if(e.location)h+='<div class="event-meta-row"><i class="ti ti-map-pin" aria-hidden="true"></i>'+esc(e.location)+'</div>';
   if(e.guests)h+='<div class="event-meta-row"><i class="ti ti-users" aria-hidden="true"></i>~'+esc(e.guests)+' guests</div>';
@@ -387,6 +390,8 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-recheck').forEach(function(b){b.onclick=function(){manualRecheckStatus(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remind').forEach(function(b){b.onclick=function(){sendReminderEmails(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-toggle-status').forEach(function(b){b.onclick=function(){toggleStatus(b.dataset.id,b.dataset.status);};});
+  mcEl.querySelectorAll('.sns-new-announcement').forEach(function(b){b.onclick=function(){openNewAnnouncementModal();};});
+  mcEl.querySelectorAll('.sns-del-announcement').forEach(function(b){b.onclick=function(){deleteAnnouncement(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remove-doc').forEach(function(b){b.onclick=function(){removeEventDocument(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){openStaffHoursModal(b.dataset.name);};});
   mcEl.querySelectorAll('.sns-export-csv').forEach(function(b){b.onclick=function(){exportHours();};}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){openPayrollModal();};});
@@ -480,6 +485,7 @@ function renderDashboardSummary(){
     return d>=weekStart&&d<=weekEnd;
   });
   var pendingReqs=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
+  var activeAnns=(state.announcements||[]).length;
   var needsStaff=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;}).length;
   var weekMs=0;
   var activeNow=(state.timeclockEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
@@ -535,6 +541,7 @@ function renderAdmin(){
   else if(state.adminTab==='hours')h+=renderAdminHours();
   else if(state.adminTab==='requests')h+=renderAdminRequests();
   else if(state.adminTab==='staff')h+=renderAdminStaff();
+  else if(state.adminTab==='announcements')h+=renderAdminAnnouncements();
   else h+=renderAdminReviews();
   return h;
 }
@@ -694,6 +701,29 @@ function renderAdminStaff(){
   h+='</tbody></table>';return h;
 }
 
+function renderAdminAnnouncements(){
+  var anns=state.announcements||[];
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">';
+  h+='<div class="section-title">Announcement Board</div>';
+  h+='<button class="btn btn-gold btn-sm sns-new-announcement"><i class="ti ti-plus" aria-hidden="true"></i> New post</button></div>';
+  if(!anns.length){
+    h+='<div class="empty"><i class="ti ti-speakerphone" aria-hidden="true"></i>No announcements yet.</div>';
+    return h;
+  }
+  anns.forEach(function(a){
+    var isTargeted=a.target_email;
+    h+='<div class="event-card" style="margin-bottom:10px">';
+    h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
+    h+='<div><div style="font-size:15px;font-weight:500;color:var(--ss-cream);margin-bottom:4px">'+esc(a.title)+'</div>';
+    if(isTargeted)h+='<div style="font-size:10px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:var(--ss-gold);padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:6px"><i class="ti ti-user" aria-hidden="true"></i> '+esc(a.target_email)+'</div>';
+    h+='<div style="font-size:13px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div></div>';
+    h+='<button class="btn btn-sm btn-danger sns-del-announcement" data-id="'+a.id+'" style="flex-shrink:0"><i class="ti ti-trash" aria-hidden="true"></i></button></div>';
+    h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:8px">'+new Date(a.created_at).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric',year:'numeric'})+'</div>';
+    h+='</div>';
+  });
+  return h;
+}
+
 function renderAdminReviews(){
   if(state.reviewingEventId){
     var ev=state.events.find(function(e){return e.id===state.reviewingEventId;});
@@ -832,6 +862,19 @@ function renderEmployee(){
   var today3=new Date();today3.setHours(0,0,0,0);
   var upcomingPicked=myPickedEvents.filter(function(e){return!e.date||new Date(e.date+'T00:00:00')>=today3;});
   var pastPicked=myPickedEvents.filter(function(e){return e.date&&new Date(e.date+'T00:00:00')<today3;});
+  if(myAnns.length){
+    h+='<div style="margin-bottom:1.5rem">';
+    h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.6rem"><i class="ti ti-speakerphone" aria-hidden="true"></i> Announcements <span style="background:var(--ss-gold);color:#000;border-radius:999px;padding:1px 6px;font-size:9px;margin-left:4px">'+myAnns.length+'</span></div>';
+    h+='<div class="divider-line" style="margin-bottom:.75rem"></div>';
+    myAnns.forEach(function(a){
+      h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-left:3px solid var(--ss-gold);border-radius:6px;padding:12px 14px;margin-bottom:8px">';
+      h+='<div style="font-size:13px;font-weight:500;color:var(--ss-cream);margin-bottom:4px">'+esc(a.title)+'</div>';
+      h+='<div style="font-size:12px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div>';
+      h+='<div style="font-size:10px;color:var(--ss-muted);margin-top:6px">'+new Date(a.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
   if(myPickedEvents.length){
     h+='<div style="margin-bottom:2rem"><div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:.75rem">Your upcoming shifts</div>';
     h+='<div class="divider-line" style="margin-bottom:.75rem"></div><div style="display:flex;flex-direction:column;gap:8px">';
@@ -1110,11 +1153,7 @@ async function updateEvent(eventId){
   // Read file BEFORE any async ops
   var pdfFile=null;
   var pdfInputEl=document.getElementById('e-pdf');
-  console.log('PDF input element:', pdfInputEl);
-  console.log('PDF files:', pdfInputEl&&pdfInputEl.files);
-  console.log('PDF file[0]:', pdfInputEl&&pdfInputEl.files&&pdfInputEl.files[0]);
   if(pdfInputEl&&pdfInputEl.files&&pdfInputEl.files[0])pdfFile=pdfInputEl.files[0];
-  console.log('pdfFile captured:', pdfFile);
   var res=await db.from('events').update({name:name,date:date,
     type:document.getElementById('e-type').value||null,
     start_time:document.getElementById('e-start').value||null,
@@ -1152,6 +1191,35 @@ async function removeEventDocument(eventId){
   if(!confirm('Remove the document from this event?'))return;
   await db.from('events').update({document_url:null}).eq('id',eventId);
   closeModal('modal-edit');await fetchAll();openEditModal(eventId);showToast('Document removed.');
+}
+
+function openNewAnnouncementModal(){
+  var staff=state.staffDirectory||[];
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-announcement';
+  var h='<div class="modal"><div class="modal-title">New Announcement <button class="btn btn-sm sns-close-modal" data-modal="modal-announcement"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Title</label><input type="text" id="ann-title" placeholder="e.g. Dress code reminder"></div>';
+  h+='<div class="form-group"><label class="form-label">Message</label><textarea id="ann-body" placeholder="Write your announcement here..." style="min-height:100px"></textarea></div>';
+  h+='<div class="form-group"><label class="form-label">Target <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(leave blank for all staff)</span></label>';
+  h+='<select id="ann-target"><option value="">All staff</option>';
+  staff.forEach(function(s){h+='<option value="'+esc(s.email)+'">'+esc(s.name)+'</option>';});
+  h+='</select></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-announcement">Cancel</button><button class="btn btn-gold sns-do-announcement"><i class="ti ti-speakerphone" aria-hidden="true"></i> Post</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-announcement').onclick=async function(){
+    var title=(document.getElementById('ann-title')||{}).value;if(title)title=title.trim();
+    var body=(document.getElementById('ann-body')||{}).value;if(body)body=body.trim();
+    var target=(document.getElementById('ann-target')||{}).value||null;
+    if(!title||!body){showToast('Title and message are required.',false);return;}
+    await db.from('announcements').insert({title:title,body:body,target_email:target});
+    closeModal('modal-announcement');await fetchAll();render();showToast('Announcement posted!');
+  };
+}
+
+async function deleteAnnouncement(id){
+  if(!confirm('Delete this announcement?'))return;
+  await db.from('announcements').delete().eq('id',id);
+  await fetchAll();render();showToast('Deleted.');
 }
 
 async function deleteEvent(id){
@@ -1410,7 +1478,7 @@ async function sendReminderEmails(eventId){
 
 async function sendNewEventNotifications(ev){
   var staff=state.staffDirectory||[];if(!staff.length)return;
-  var det=(ev.type?'Type: '+ev.type+'\n':'')+'Date: '+ev.date+(ev.start_time?' at '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+'\n'+(ev.location?'Venue: '+ev.location+'\n':'')+(ev.guests?'Guests: ~'+ev.guests+'\n':'')+(ev.servers_needed>0?'Servers needed: '+ev.servers_needed+'\n':'')+(ev.bartenders_needed>0?'Bartenders needed: '+ev.bartenders_needed+'\n':'')+(ev.chefs_needed>0?'Chefs needed: '+ev.chefs_needed+'\n':'')+(ev.notes?'Notes: '+ev.notes+'\n':'');
+  var det=(ev.type?'Type: '+ev.type+'\n':'')+'Date: '+fmtDate(ev.date)+(ev.arrival_time?'\nStaff arrival: '+fmtTime(ev.arrival_time):'')+(ev.start_time?'\nEvent: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+'\n'+(ev.location?'Venue: '+ev.location+'\n':'')+(ev.guests?'Guests: ~'+ev.guests+'\n':'')+(ev.servers_needed>0?'Servers needed: '+ev.servers_needed+'\n':'')+(ev.bartenders_needed>0?'Bartenders needed: '+ev.bartenders_needed+'\n':'')+(ev.chefs_needed>0?'Chefs needed: '+ev.chefs_needed+'\n':'')+(ev.notes?'Notes: '+ev.notes+'\n':'');
   var sent=0;
   for(var i=0;i<staff.length;i++){
     var s=staff[i];
@@ -1655,8 +1723,9 @@ function openCreateModal(){
       if(endField)endField.style.display=isDS?'none':'block';
     };
   },0);
-  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="c-date"></div><div class="form-group"><label class="form-label">Start time</label><input type="time" id="c-start"></div></div>';
-  h+='<div class="form-row"><div class="form-group" id="c-end-wrap"><label class="form-label">End time</label><input type="time" id="c-end"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="c-loc"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="c-date"></div><div class="form-group"><label class="form-label">Staff arrival</label><input type="time" id="c-arrival"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Event start</label><input type="time" id="c-start"></div><div class="form-group" id="c-end-wrap"><label class="form-label">Event end</label><input type="time" id="c-end"></div></div>';
+  h+='<div class="form-group"><label class="form-label">Venue</label><input type="text" id="c-loc"></div>';
 h+='<div id="c-dropset-fields" style="display:none"><div class="form-row"><div class="form-group"><label class="form-label">Arrival time</label><input type="time" id="c-arrival"></div><div class="form-group"><label class="form-label">Address</label><input type="text" id="c-address" placeholder="123 Main St, City"></div></div></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">';
   h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Staff needed</div>';
@@ -1679,8 +1748,9 @@ function openEditModal(eventId){
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Event type</label><select id="e-type"><option value="">\u2014 Select \u2014</option>';
   EVENT_TYPES.forEach(function(t){h+='<option'+(e.type===t?' selected':'')+'>'+t+'</option>';});
   h+='</select></div><div class="form-group"><label class="form-label">Guest count</label><input type="number" id="e-guests" min="0" value="'+esc(e.guests||'')+'"></div></div>';
-  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="e-date" value="'+esc(e.date||'')+'"></div><div class="form-group"><label class="form-label">Start time</label><input type="time" id="e-start" value="'+esc(e.start_time||'')+'"></div></div>';
-  h+='<div class="form-row"><div class="form-group"><label class="form-label">End time</label><input type="time" id="e-end" value="'+esc(e.end_time||'')+'"></div><div class="form-group"><label class="form-label">Venue</label><input type="text" id="e-loc" value="'+esc(e.location||'')+'"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="e-date" value="'+esc(e.date||'')+'"></div><div class="form-group"><label class="form-label">Staff arrival</label><input type="time" id="e-arrival" value="'+esc(e.arrival_time||'')+'"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Event start</label><input type="time" id="e-start" value="'+esc(e.start_time||'')+'"></div><div class="form-group"><label class="form-label">Event end</label><input type="time" id="e-end" value="'+esc(e.end_time||'')+'"></div></div>';
+  h+='<div class="form-group"><label class="form-label">Venue</label><input type="text" id="e-loc" value="'+esc(e.location||'')+'"></div>';
 h+='<div id="e-dropset-fields" style="display:'+(e.type==='Drop & Set'?'block':'none')+'"><div class="form-row"><div class="form-group"><label class="form-label">Arrival time</label><input type="time" id="e-arrival" value="'+esc(e.arrival_time||'')+'"></div><div class="form-group"><label class="form-label">Address</label><input type="text" id="e-address" value="'+esc(e.address||'')+'"></div></div></div>';
   h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1rem">';
   h+='<div style="font-size:11px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Staff needed</div>';
