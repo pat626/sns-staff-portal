@@ -846,6 +846,7 @@ function renderEmployee(){
   if(!state.employeeName)return renderStaffLogin();
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
   var myBids=state.bids.filter(function(b){return myEm&&b.staff_email?b.staff_email.toLowerCase().trim()===myEm:b.staff_name===state.employeeName;});
+  var myAnns=(state.announcements||[]).filter(function(a){return !a.target_email||(myEm&&a.target_email.toLowerCase()===myEm);});
   var myPickedBids=myBids.filter(function(b){return b.selected;});
   var myPickedIds=myPickedBids.map(function(b){return b.event_id;});
   var myPickedEvents=state.events.filter(function(e){return myPickedIds.indexOf(e.id)>=0;});
