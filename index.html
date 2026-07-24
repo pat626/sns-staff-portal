@@ -179,7 +179,7 @@ const db=createClient(SUPA_URL,SUPA_KEY);
 var state={
   view:'employee',adminLoggedIn:false,adminSession:null,
   employeeName:'',employeeEmail:'',
-  events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],announcements:[],mgmtSchedule:[],
+  events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],announcements:[],mgmtSchedule:[],managers:[],
   dateFilter:'upcoming',adminTab:'events',peopleTab:'hours',reportsTab:'reviews',schedWeekOffset:0,adminShowPast:false,reviewingEventId:null,
   ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event',hoursWeekOffset:0
 };
@@ -222,7 +222,8 @@ async function fetchAll(){
       db.from('staff_directory').select('*').order('name',{ascending:true}),
       db.from('event_reviews').select('*').order('created_at',{ascending:false}),
       db.from('announcements').select('*').order('created_at',{ascending:false}),
-      db.from('management_schedule').select('*').order('date',{ascending:true})
+      db.from('management_schedule').select('*').order('date',{ascending:true}),
+      db.from('managers').select('*').order('name',{ascending:true})
     ]);
     state.events=r[0].data||[];
     state.bids=r[1].data||[];
@@ -233,6 +234,7 @@ async function fetchAll(){
     state.eventReviews=r[5].data||[];
     state.announcements=r[6].data||[];
     state.mgmtSchedule=r[7].data||[];
+    state.managers=(r[8].data||[]).filter(function(m){return m.active;});
   }catch(e){console.error('fetchAll error',e);}
 }
 
@@ -392,6 +394,9 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-recheck').forEach(function(b){b.onclick=function(){manualRecheckStatus(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remind').forEach(function(b){b.onclick=function(){sendReminderEmails(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-toggle-status').forEach(function(b){b.onclick=function(){toggleStatus(b.dataset.id,b.dataset.status);};});
+  mcEl.querySelectorAll('.sns-new-manager').forEach(function(b){b.onclick=function(){openManagerModal(null);};});
+  mcEl.querySelectorAll('.sns-edit-manager').forEach(function(b){b.onclick=function(){var mg=(state.managers||[]).find(function(m){return m.id===b.dataset.id;});if(mg)openManagerModal(mg);};});
+  mcEl.querySelectorAll('.sns-del-manager').forEach(function(b){b.onclick=async function(){if(!confirm('Remove this manager?'))return;await db.from('managers').update({active:false}).eq('id',b.dataset.id);await fetchAll();render();showToast('Removed.');};});
   mcEl.querySelectorAll('.sns-sched-prev').forEach(function(b){b.onclick=function(){state.schedWeekOffset=(state.schedWeekOffset||0)-1;render();};});
   mcEl.querySelectorAll('.sns-sched-next').forEach(function(b){b.onclick=function(){if((state.schedWeekOffset||0)<0){state.schedWeekOffset=(state.schedWeekOffset||0)+1;render();}};});
   mcEl.querySelectorAll('.sns-new-sched-entry').forEach(function(b){b.onclick=function(){openSchedModal('',null);};});
@@ -735,14 +740,16 @@ function renderAdminReports(){
   var h='';
   var sub=state.reportsTab||'reviews';
   h+='<div style="display:flex;gap:4px;margin-bottom:1.25rem;border-bottom:1px solid var(--ss-border);padding-bottom:.75rem">';
-  ['reviews','schedule'].forEach(function(t){
-    var labels={reviews:'Event Reviews',schedule:'Mgmt Schedule'};
-    var icons={reviews:'ti-star',schedule:'ti-calendar-week'};
+  ['reviews','schedule','managers'].forEach(function(t){
+    var labels={reviews:'Event Reviews',schedule:'Mgmt Schedule',managers:'Managers'};
+    var icons={reviews:'ti-star',schedule:'ti-calendar-week',managers:'ti-shield-half'};
     h+='<button class="btn btn-sm sns-reports-tab'+(sub===t?' btn-gold':'')+'" data-rtab="'+t+'" style="font-size:11px"><i class="ti '+icons[t]+'" aria-hidden="true"></i> '+labels[t]+'</button>';
   });
   h+='</div>';
   if(sub==='schedule'){
     h+=renderAdminSchedule();
+  } else if(sub==='managers'){
+    h+=renderAdminManagers();
   } else {
     h+=renderAdminReviews();
   }
@@ -801,6 +808,7 @@ function renderAdminSchedule(){
       h+='<div style="border-radius:3px;padding:4px 5px;margin-bottom:3px;font-size:10px;background:'+bg+';border-left:2px solid '+col+';cursor:pointer" class="sns-sched-entry" data-id="'+e.id+'">';
       h+='<div style="font-weight:500;color:var(--ss-cream);line-height:1.2">'+esc(e.title)+'</div>';
       if(e.start_time)h+='<div style="opacity:.7;font-size:9px;margin-top:1px">'+fmtTime(e.start_time)+(e.end_time?' – '+fmtTime(e.end_time):'')+'</div>';
+      if(e.assigned_to)h+='<div style="opacity:.6;font-size:9px;margin-top:1px"><i class="ti ti-user" aria-hidden="true"></i> '+esc(e.assigned_to)+'</div>';
       h+='</div>';
     });
     h+='<button class="btn sns-new-sched-day btn-sm" data-date="'+dayDateStr+'" style="width:100%;margin-top:4px;background:none;border:1px dashed rgba(255,255,255,.08);border-radius:3px;color:var(--ss-muted);font-size:10px;padding:3px">+ Add</button>';
@@ -829,6 +837,7 @@ function renderAdminSchedule(){
     h+='<button class="btn btn-sm sns-edit-sched" data-id="'+e.id+'" style="padding:3px 6px"><i class="ti ti-pencil" aria-hidden="true"></i></button>';
     h+='<button class="btn btn-sm btn-danger sns-del-sched" data-id="'+e.id+'" style="padding:3px 6px"><i class="ti ti-trash" aria-hidden="true"></i></button>';
     h+='</div></div>';
+    if(e.assigned_to)h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:4px"><i class="ti ti-user" aria-hidden="true"></i> '+esc(e.assigned_to)+'</div>';
     if(e.notes)h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:6px;font-style:italic;border-top:1px solid var(--ss-border);padding-top:6px;line-height:1.5">'+esc(e.notes)+'</div>';
     h+='</div></div>';
   });
@@ -846,6 +855,9 @@ function openSchedModal(prefillDate,existingEntry){
   h+='</select></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="sched-date" value="'+(isEdit?esc(existingEntry.date||''):(prefillDate||''))+'"></div><div class="form-group"></div></div>';
   h+='<div class="form-row"><div class="form-group"><label class="form-label">Start time</label><input type="time" id="sched-start" value="'+(isEdit?esc(existingEntry.start_time||''):'')+'" ></div><div class="form-group"><label class="form-label">End time</label><input type="time" id="sched-end" value="'+(isEdit?esc(existingEntry.end_time||''):'')+'" ></div></div>';
+  h+='<div class="form-group"><label class="form-label">Assign to <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><select id="sched-assignee"><option value="">— Unassigned —</option>';
+  (state.managers||[]).forEach(function(mg){h+='<option value="'+esc(mg.name)+'"'+(isEdit&&existingEntry.assigned_to===mg.name?' selected':'')+'>'+esc(mg.name)+(mg.role?' — '+esc(mg.role):'')+'</option>';});
+  h+='</select></div>';
   h+='<div class="form-group"><label class="form-label">Notes <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="sched-notes" style="min-height:80px">'+(isEdit?esc(existingEntry.notes||''):'')+'</textarea></div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-sched">Cancel</button><button class="btn btn-gold sns-do-sched"><i class="ti ti-check" aria-hidden="true"></i> '+(isEdit?'Save':'Add shift')+'</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
@@ -859,11 +871,60 @@ function openSchedModal(prefillDate,existingEntry){
     var notes=(document.getElementById('sched-notes')||{}).value;if(notes)notes=notes.trim()||null;
     if(!title||!date){showToast('Title and date required.',false);return;}
     if(isEdit){
-      await db.from('management_schedule').update({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes}).eq('id',existingEntry.id);
+      var assignee=(document.getElementById('sched-assignee')||{}).value||null;
+      await db.from('management_schedule').update({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes,assigned_to:assignee}).eq('id',existingEntry.id);
     }else{
-      await db.from('management_schedule').insert({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes});
+      var assignee=(document.getElementById('sched-assignee')||{}).value||null;
+      await db.from('management_schedule').insert({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes,assigned_to:assignee});
     }
     closeModal('modal-sched');await fetchAll();render();showToast(isEdit?'Shift updated!':'Shift added!');
+  };
+}
+
+function renderAdminManagers(){
+  var mgrs=state.managers||[];
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">';
+  h+='<div class="section-title">Managers & Admins</div>';
+  h+='<button class="btn btn-gold btn-sm sns-new-manager"><i class="ti ti-plus" aria-hidden="true"></i> Add manager</button></div>';
+  if(!mgrs.length){
+    h+='<div class="empty"><i class="ti ti-shield-half" aria-hidden="true"></i>No managers added yet.</div>';
+    return h;
+  }
+  h+='<div style="display:flex;flex-direction:column;gap:6px">';
+  mgrs.forEach(function(mg){
+    h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border);border-radius:6px;padding:11px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px">';
+    h+='<div><div style="font-size:13px;font-weight:500;color:var(--ss-cream)">'+esc(mg.name)+'</div>';
+    h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+(mg.role?esc(mg.role):'')+(mg.email?'&nbsp;&middot;&nbsp;'+esc(mg.email):'')+'</div></div>';
+    h+='<div style="display:flex;gap:5px">';
+    h+='<button class="btn btn-sm sns-edit-manager" data-id="'+mg.id+'"><i class="ti ti-pencil" aria-hidden="true"></i></button>';
+    h+='<button class="btn btn-sm btn-danger sns-del-manager" data-id="'+mg.id+'"><i class="ti ti-trash" aria-hidden="true"></i></button>';
+    h+='</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+function openManagerModal(existing){
+  var isEdit=!!existing;
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-manager';
+  var h='<div class="modal"><div class="modal-title">'+(isEdit?'Edit':'Add')+' Manager <button class="btn btn-sm sns-close-modal" data-modal="modal-manager"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Name</label><input type="text" id="mgr-name" value="'+(isEdit?esc(existing.name||''):'')+'" placeholder="e.g. Liam Quinn"></div>';
+  h+='<div class="form-group"><label class="form-label">Role <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="text" id="mgr-role" value="'+(isEdit?esc(existing.role||''):'')+'" placeholder="e.g. Event Manager"></div>';
+  h+='<div class="form-group"><label class="form-label">Email <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="email" id="mgr-email" value="'+(isEdit?esc(existing.email||''):'')+'" placeholder="e.g. liam@forkhospitality.com"></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-manager">Cancel</button><button class="btn btn-gold sns-do-manager"><i class="ti ti-check" aria-hidden="true"></i> '+(isEdit?'Save':'Add')+'</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-manager').onclick=async function(){
+    var name=(document.getElementById('mgr-name')||{}).value;if(name)name=name.trim();
+    var role=(document.getElementById('mgr-role')||{}).value;if(role)role=role.trim()||null;
+    var email=(document.getElementById('mgr-email')||{}).value;if(email)email=email.trim()||null;
+    if(!name){showToast('Name is required.',false);return;}
+    if(isEdit){
+      await db.from('managers').update({name:name,role:role,email:email}).eq('id',existing.id);
+    }else{
+      await db.from('managers').insert({name:name,role:role,email:email,active:true});
+    }
+    closeModal('modal-manager');await fetchAll();render();showToast(isEdit?'Manager updated!':'Manager added!');
   };
 }
 
