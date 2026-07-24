@@ -2249,7 +2249,8 @@ function openStaffHoursModal(name){
           var isDrop=t.note&&t.note.startsWith('Drop');
           var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
           var rawNote=t.note||'';
-          var displayNote=isDrop?rawNote.replace('Drop — 3h | ','').replace('Drop — 3h','').trim()||'Drop':rawNote||'Time clock';
+          var linkedEv=t.event_id?state.events.find(function(ev){return ev.id===t.event_id;}):null;
+          var displayNote=isDrop?rawNote.replace('Drop — 3h | ','').replace('Drop — 3h','').trim()||'Drop':linkedEv?linkedEv.name:(rawNote&&rawNote!=='Event'?rawNote:'Time clock');
           var isIn=t.clocked_in&&!t.clocked_out;
           h+='<tr><td><div style="font-weight:500;color:var(--ss-cream)">'+(isDrop?'<span class="badge badge-picked" style="margin-right:6px;font-size:9px;vertical-align:middle">Drop</span>':'')+esc(displayNote)+'</div></td>';
           h+='<td><span style="font-size:11px;color:var(--ss-muted)">Clock</span></td>';
