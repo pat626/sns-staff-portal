@@ -1452,7 +1452,6 @@ function openNewAnnouncementModal(){
   m.querySelectorAll('.ann-staff-cb').forEach(function(cb){
     cb.onchange=function(){if(cb.checked&&annAllCb)annAllCb.checked=false;};
   });
-    h+='<input type="checkbox" class="ann-staff-cb" value="'+esc(s.email)+'"> '+esc(s.name)+'</label>';
   m.querySelector('.sns-do-announcement').onclick=async function(){
     var title=(document.getElementById('ann-title')||{}).value;if(title)title=title.trim();
     var body=(document.getElementById('ann-body')||{}).value;if(body)body=body.trim();
