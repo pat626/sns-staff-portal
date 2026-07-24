@@ -409,7 +409,7 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-new-announcement').forEach(function(b){b.onclick=function(){openNewAnnouncementModal();};});
   mcEl.querySelectorAll('.sns-del-announcement').forEach(function(b){b.onclick=function(){deleteAnnouncement(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remove-doc').forEach(function(b){b.onclick=function(){removeEventDocument(b.dataset.id);};});
-  mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){openStaffHoursModal(b.dataset.name);};});
+  mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){try{openStaffHoursModal(b.dataset.name);}catch(e){showToast('Error opening details: '+e.message,false);console.error(e);}};});
   mcEl.querySelectorAll('.sns-export-csv').forEach(function(b){b.onclick=function(){exportHours();};}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){openPayrollModal();};});
   mcEl.querySelectorAll('.sns-export-weekly').forEach(function(b){b.onclick=function(){exportWeeklyReport();};});
   mcEl.querySelectorAll('.sns-approve').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'approved');};});
