@@ -180,7 +180,7 @@ var state={
   view:'employee',adminLoggedIn:false,adminSession:null,
   employeeName:'',employeeEmail:'',
   events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],announcements:[],
-  dateFilter:'upcoming',adminTab:'events',adminShowPast:false,reviewingEventId:null,
+  dateFilter:'upcoming',adminTab:'events',peopleTab:'hours',reportsTab:'reviews',adminShowPast:false,reviewingEventId:null,
   ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event',hoursWeekOffset:0
 };
 
@@ -390,6 +390,8 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-recheck').forEach(function(b){b.onclick=function(){manualRecheckStatus(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remind').forEach(function(b){b.onclick=function(){sendReminderEmails(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-toggle-status').forEach(function(b){b.onclick=function(){toggleStatus(b.dataset.id,b.dataset.status);};});
+  mcEl.querySelectorAll('.sns-people-tab').forEach(function(b){b.onclick=function(){state.peopleTab=b.dataset.ptab;render();};});
+  mcEl.querySelectorAll('.sns-reports-tab').forEach(function(b){b.onclick=function(){state.reportsTab=b.dataset.rtab;render();};});
   mcEl.querySelectorAll('.sns-new-announcement').forEach(function(b){b.onclick=function(){openNewAnnouncementModal();};});
   mcEl.querySelectorAll('.sns-del-announcement').forEach(function(b){b.onclick=function(){deleteAnnouncement(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remove-doc').forEach(function(b){b.onclick=function(){removeEventDocument(b.dataset.id);};});
@@ -487,6 +489,7 @@ function renderDashboardSummary(){
   var pendingReqs=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
   var activeAnns=(state.announcements||[]).length;
   var needsStaff=thisWeekEvents.filter(function(e){return e.status==='open'||!e.status;}).length;
+  var pendingCount=pendingReqs;
   var weekMs=0;
   var activeNow=(state.timeclockEntries||[]).filter(function(t){return t.clocked_in&&!t.clocked_out;}).length;
   // Count all hours from timeclock for this week (Mon-Sun)
@@ -532,17 +535,15 @@ function renderAdmin(){
   if(!ejsOk)h+='<div class="info-box"><i class="ti ti-mail-off" aria-hidden="true"></i><div>Email notifications not configured. Click Settings to set up EmailJS.</div></div>';
   h+=renderDashboardSummary();
   h+='<div class="tabs">';
-  [['events','Events','ti-calendar-event'],['hours','Hours','ti-clock'],['requests','Requests','ti-arrows-exchange'],['staff','Staff','ti-users'],['announcements','Board','ti-speakerphone'],['reviews','Reviews','ti-clipboard-check']].forEach(function(t){
-    var badge=t[0]==='requests'&&pc>0?' <span style="background:#e57373;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pc+'</span>':'';
+  [['events','Events','ti-calendar-event'],['people','People','ti-users'],['board','Board','ti-speakerphone'],['reports','Reports','ti-chart-bar']].forEach(function(t){
+    var badge=(t[0]==='people'&&pc>0?' <span style="background:#e57373;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+pc+'</span>':'')+(t[0]==='board'&&activeAnns>0?' <span style="background:var(--ss-gold);color:#000;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px">'+activeAnns+'</span>':'');
     h+='<button class="tab'+(state.adminTab===t[0]?' active':'')+' sns-tab" data-tab="'+t[0]+'"><i class="ti '+t[2]+'" aria-hidden="true"></i> '+t[1]+badge+'</button>';
   });
   h+='</div>';
   if(state.adminTab==='events')h+=renderAdminEvents();
-  else if(state.adminTab==='hours')h+=renderAdminHours();
-  else if(state.adminTab==='requests')h+=renderAdminRequests();
-  else if(state.adminTab==='staff')h+=renderAdminStaff();
-  else if(state.adminTab==='announcements')h+=renderAdminAnnouncements();
-  else h+=renderAdminReviews();
+  else if(state.adminTab==='people')h+=renderAdminPeople();
+  else if(state.adminTab==='board')h+=renderAdminAnnouncements();
+  else h+=renderAdminReports();
   return h;
 }
 
@@ -610,6 +611,25 @@ function renderAdminEvents(){
     });
     h+='</div>';
   });
+  return h;
+}
+
+function renderAdminPeople(){
+  var h='';
+  // Sub-nav
+  var sub=state.peopleTab||'hours';
+  h+='<div style="display:flex;gap:4px;margin-bottom:1.25rem;border-bottom:1px solid var(--ss-border);padding-bottom:.75rem">';
+  ['hours','requests','staff'].forEach(function(t){
+    var labels={hours:'Hours',requests:'Requests',staff:'Directory'};
+    var icons={hours:'ti-clock',requests:'ti-arrows-exchange',staff:'ti-address-book'};
+    var badge='';
+    if(t==='requests'){var pc2=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;if(pc2>0)badge=' <span style="background:#e57373;color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:3px">'+pc2+'</span>';}
+    h+='<button class="btn btn-sm sns-people-tab'+(sub===t?' btn-gold':'')+'" data-ptab="'+t+'" style="font-size:11px"><i class="ti '+icons[t]+'" aria-hidden="true"></i> '+labels[t]+badge+'</button>';
+  });
+  h+='</div>';
+  if(sub==='hours')h+=renderAdminHours();
+  else if(sub==='requests')h+=renderAdminRequests();
+  else h+=renderAdminStaff();
   return h;
 }
 
@@ -699,6 +719,24 @@ function renderAdminStaff(){
     h+='<button class="btn btn-sm btn-danger sns-del-staff" data-id="'+s.id+'" data-name="'+esc(s.name)+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
   });
   h+='</tbody></table>';return h;
+}
+
+function renderAdminReports(){
+  var h='';
+  var sub=state.reportsTab||'reviews';
+  h+='<div style="display:flex;gap:4px;margin-bottom:1.25rem;border-bottom:1px solid var(--ss-border);padding-bottom:.75rem">';
+  ['reviews','schedule'].forEach(function(t){
+    var labels={reviews:'Event Reviews',schedule:'Mgmt Schedule'};
+    var icons={reviews:'ti-star',schedule:'ti-calendar-week'};
+    h+='<button class="btn btn-sm sns-reports-tab'+(sub===t?' btn-gold':'')+'" data-rtab="'+t+'" style="font-size:11px"><i class="ti '+icons[t]+'" aria-hidden="true"></i> '+labels[t]+'</button>';
+  });
+  h+='</div>';
+  if(sub==='schedule'){
+    h+='<div class="empty"><i class="ti ti-calendar-week" aria-hidden="true"></i>Management schedule coming soon — set up the database table to enable this feature.</div>';
+  } else {
+    h+=renderAdminReviews();
+  }
+  return h;
 }
 
 function renderAdminAnnouncements(){
@@ -1204,8 +1242,7 @@ function openNewAnnouncementModal(){
   h+='<div style="display:flex;flex-wrap:wrap;gap:8px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:10px" id="ann-target-wrap">';
   h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-muted);cursor:pointer;width:100%"><input type="checkbox" id="ann-all" checked> All staff</label>';
   staff.forEach(function(s){
-    h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-text);cursor:pointer">';
-  h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-muted);cursor:pointer;width:100%"><input type="checkbox" id="ann-all" checked> All staff</label>';
+    h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-text);cursor:pointer"><input type="checkbox" class="ann-staff-cb" value="'+esc(s.email)+'"> '+esc(s.name)+'</label>';
   });
   h+='</div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-announcement">Cancel</button><button class="btn btn-gold sns-do-announcement"><i class="ti ti-speakerphone" aria-hidden="true"></i> Post</button></div></div>';
