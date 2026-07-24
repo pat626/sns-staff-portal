@@ -1734,7 +1734,8 @@ async function sendReminderEmails(eventId){
   for(var i=0;i<picked.length;i++){
     var b=picked[i];
     var role=b.role||'staff';
-    var body='Hi '+b.staff_name+', just a reminder that you are on the schedule'+(ev.date?' tomorrow':'')+'.\n\nEvent: '+ev.name+'\nDate: '+fmtDate(ev.date)+(ev.start_time?'\nTime: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+(ev.location?'\nVenue: '+ev.location:'')+(ev.arrival_time?'\nArrival: '+fmtTime(ev.arrival_time):'')+(ev.address?'\nAddress: '+ev.address:'')+'\nYour role: '+role+'\n\nPlease clock in through the staff portal when you arrive. If anything has changed, submit a shift request as soon as possible.\n\n— The Shaken & Stirred Team';
+    var today=new Date();today.setHours(0,0,0,0);var evDate=ev.date?new Date(ev.date+'T00:00:00'):null;var daysUntil=evDate?Math.round((evDate-today)/(1000*60*60*24)):null;var dayStr=daysUntil===0?' today':daysUntil===1?' tomorrow':daysUntil>1?' in '+daysUntil+' days':'';
+    var body='Hi '+b.staff_name+', just a reminder that you are on the schedule'+dayStr+'.\n\nEvent: '+ev.name+'\nDate: '+fmtDate(ev.date)+(ev.start_time?'\nTime: '+fmtTime(ev.start_time)+(ev.end_time?' - '+fmtTime(ev.end_time):''):'')+(ev.location?'\nVenue: '+ev.location:'')+(ev.arrival_time?'\nArrival: '+fmtTime(ev.arrival_time):'')+(ev.address?'\nAddress: '+ev.address:'')+'\nYour role: '+role+'\n\nPlease clock in through the staff portal when you arrive. If anything has changed, submit a shift request as soon as possible.\n\n— The Shaken & Stirred Team';
     var ok=await sendEmail(b.staff_email,b.staff_name,'Reminder: you are on the schedule — '+ev.name,body);
     if(ok)sent++;
   }
