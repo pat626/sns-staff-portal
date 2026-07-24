@@ -1288,6 +1288,7 @@ function renderTimeclock(){
           h+='<div style="display:flex;align-items:center;gap:6px">';
           if(isAdmin)h+='<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(150,180,255,.12);color:#96b4ff;border:1px solid rgba(150,180,255,.25);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Admin</span>';
           else if(isEvent&&!isDrop)h+='<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(46,125,82,.12);color:#66bb8a;border:1px solid rgba(102,187,138,.25);font-weight:500;text-transform:uppercase;letter-spacing:.04em">Event</span>';
+          if(isAdmin)h+='<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(150,180,255,.12);color:#96b4ff;border:1px solid rgba(150,180,255,.25);font-weight:500;letter-spacing:.04em">Admin</span>';
           if(isA)h+='<span class="tc-hi-active">Active</span>';
           else if(isDrop)h+='<span class="tc-hi-drop">Drop &middot; 3h</span>';
           else h+='<span class="tc-hi-hrs">'+fmtH(ms)+'</span>';
@@ -2248,6 +2249,8 @@ function openStaffHoursModal(name){
           h+='<button class="btn btn-sm btn-danger sns-sh-del" data-idx="'+entries.indexOf(t)+'"><i class="ti ti-trash" aria-hidden="true"></i></button></td></tr>';
         } else {
           var isDrop=t.note&&(t.note.startsWith('Drop')||t.note==='Drop');
+          var isAdmin=t.note==='Admin';
+          var isEvent=!isAdmin&&!isDrop;
           var inDate=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
           var rawNote=t.note||'';
           var linkedEv=t.event_id?state.events.find(function(ev){return ev.id===t.event_id;}):null;
