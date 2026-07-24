@@ -531,6 +531,7 @@ function renderAdmin(){
   if(!state.adminLoggedIn)return renderAdminLogin();
   var ejsOk=state.ejsPublicKey&&state.ejsServiceId&&state.ejsTemplateId;
   var pc=(state.shiftRequests||[]).filter(function(r){return r.status==='pending';}).length;
+  var activeAnns=(state.announcements||[]).length;
   var h='';
   if(!ejsOk)h+='<div class="info-box"><i class="ti ti-mail-off" aria-hidden="true"></i><div>Email notifications not configured. Click Settings to set up EmailJS.</div></div>';
   h+=renderDashboardSummary();
