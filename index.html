@@ -1080,7 +1080,12 @@ function renderEmployee(){
   var today=new Date();today.setHours(0,0,0,0);
   var openEvents=filteredEvents(state.events.filter(function(e){return(!e.status||e.status==='open')&&(!e.date||new Date(e.date+'T00:00:00')>=today);}));
   var totalMs=totalMsForStaff(state.employeeName,state.employeeEmail);
-  var activeClock=state.timeclockEntries.find(function(t){return(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName)&&t.clocked_in&&!t.clocked_out&&t.event_id;});
+  var activeClock=state.timeclockEntries.find(function(t){
+    if(!t.event_id||!t.clocked_in||t.clocked_out)return false;
+    var emailMatch=myEm&&t.staff_email&&t.staff_email.toLowerCase().trim()===myEm;
+    var nameMatch=t.staff_name===state.employeeName;
+    return emailMatch||nameMatch;
+  });
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">';
   h+='<div><div style="font-family:\'Playfair Display\',serif;font-size:18px;color:var(--ss-cream)">Welcome, '+esc(state.employeeName)+'</div>';
   h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+esc(state.employeeEmail)+'</div></div>';
@@ -1108,7 +1113,12 @@ function renderEmployee(){
     h+='<div class="divider-line" style="margin-bottom:.75rem"></div><div style="display:flex;flex-direction:column;gap:8px">';
     upcomingPicked.forEach(function(e){
       var pb=myPickedBids.find(function(b){return b.event_id===e.id;});
-      var te=state.timeclockEntries.find(function(t){return t.event_id===e.id&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
+      var te=state.timeclockEntries.find(function(t){
+        if(t.event_id!==e.id)return false;
+        var emailMatch=myEm&&t.staff_email&&t.staff_email.toLowerCase().trim()===myEm;
+        var nameMatch=t.staff_name===state.employeeName;
+        return emailMatch||nameMatch;
+      });
       var isIn=te&&te.clocked_in&&!te.clocked_out;
       var logged=te?((te.total_ms||0)+(isIn?Date.now()-te.clocked_in:0)):0;
       // Also check timeclock table for Drop & Set drops
@@ -1562,7 +1572,12 @@ function dropClockIn(eventId){
 
 async function clockIn(eventId){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var existing=state.timeclockEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName);});
+  var existing=state.timeclockEntries.find(function(t){
+    if(t.event_id!==eventId)return false;
+    var emailMatch=myEm&&t.staff_email&&t.staff_email.toLowerCase().trim()===myEm;
+    var nameMatch=t.staff_name===state.employeeName;
+    return emailMatch||nameMatch;
+  });
   if(existing&&existing.clocked_in&&!existing.clocked_out){showToast('Already clocked in.',false);return;}
   var pb=state.bids.find(function(b){return b.event_id===eventId&&b.staff_name===state.employeeName&&b.selected;});
   var ev=state.events.find(function(e){return e.id===eventId;});
@@ -1576,7 +1591,14 @@ async function clockIn(eventId){
 
 async function clockOut(eventId){
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
-  var te=state.timeclockEntries.find(function(t){return t.event_id===eventId&&(myEm&&t.staff_email?t.staff_email.toLowerCase().trim()===myEm:t.staff_name===state.employeeName)&&t.clocked_in&&!t.clocked_out;});
+  var myName=state.employeeName;
+  var te=state.timeclockEntries.find(function(t){
+    if(t.event_id!==eventId)return false;
+    if(!t.clocked_in||t.clocked_out)return false;
+    var emailMatch=myEm&&t.staff_email&&t.staff_email.toLowerCase().trim()===myEm;
+    var nameMatch=t.staff_name===myName;
+    return emailMatch||nameMatch;
+  });
   if(!te){showToast('Not clocked in.',false);return;}
   var ms=Date.now()-te.clocked_in;
   await db.from('timeclock').update({clocked_out:Date.now(),total_ms:(te.total_ms||0)+ms,clocked_in:null}).eq('id',te.id);
