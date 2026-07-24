@@ -179,8 +179,8 @@ const db=createClient(SUPA_URL,SUPA_KEY);
 var state={
   view:'employee',adminLoggedIn:false,adminSession:null,
   employeeName:'',employeeEmail:'',
-  events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],announcements:[],
-  dateFilter:'upcoming',adminTab:'events',peopleTab:'hours',reportsTab:'reviews',adminShowPast:false,reviewingEventId:null,
+  events:[],bids:[],timeEntries:[],shiftRequests:[],timeclockEntries:[],staffDirectory:[],eventReviews:[],announcements:[],mgmtSchedule:[],
+  dateFilter:'upcoming',adminTab:'events',peopleTab:'hours',reportsTab:'reviews',schedWeekOffset:0,adminShowPast:false,reviewingEventId:null,
   ejsServiceId:'service_vcgm7pc',ejsTemplateId:'template_qj4q1fi',ejsPublicKey:'6iPAaWxrM1Qxr5m5-',tcCategory:'Event',hoursWeekOffset:0
 };
 
@@ -221,7 +221,8 @@ async function fetchAll(){
       db.from('shift_requests').select('*').order('created_at',{ascending:false}),
       db.from('staff_directory').select('*').order('name',{ascending:true}),
       db.from('event_reviews').select('*').order('created_at',{ascending:false}),
-      db.from('announcements').select('*').order('created_at',{ascending:false})
+      db.from('announcements').select('*').order('created_at',{ascending:false}),
+      db.from('management_schedule').select('*').order('date',{ascending:true})
     ]);
     state.events=r[0].data||[];
     state.bids=r[1].data||[];
@@ -231,6 +232,7 @@ async function fetchAll(){
     state.staffDirectory=(r[4].data||[]).filter(function(s){return s.active;});
     state.eventReviews=r[5].data||[];
     state.announcements=r[6].data||[];
+    state.mgmtSchedule=r[7].data||[];
   }catch(e){console.error('fetchAll error',e);}
 }
 
@@ -390,6 +392,13 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-recheck').forEach(function(b){b.onclick=function(){manualRecheckStatus(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-resend').forEach(function(b){b.onclick=function(){resendEventNotification(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remind').forEach(function(b){b.onclick=function(){sendReminderEmails(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-toggle-status').forEach(function(b){b.onclick=function(){toggleStatus(b.dataset.id,b.dataset.status);};});
+  mcEl.querySelectorAll('.sns-sched-prev').forEach(function(b){b.onclick=function(){state.schedWeekOffset=(state.schedWeekOffset||0)-1;render();};});
+  mcEl.querySelectorAll('.sns-sched-next').forEach(function(b){b.onclick=function(){if((state.schedWeekOffset||0)<0){state.schedWeekOffset=(state.schedWeekOffset||0)+1;render();}};});
+  mcEl.querySelectorAll('.sns-new-sched-entry').forEach(function(b){b.onclick=function(){openSchedModal('',null);};});
+  mcEl.querySelectorAll('.sns-new-sched-day').forEach(function(b){b.onclick=function(){openSchedModal(b.dataset.date,null);};});
+  mcEl.querySelectorAll('.sns-edit-sched').forEach(function(b){b.onclick=function(){var e=(state.mgmtSchedule||[]).find(function(s){return s.id===b.dataset.id;});if(e)openSchedModal('',e);};});
+  mcEl.querySelectorAll('.sns-del-sched').forEach(function(b){b.onclick=async function(){if(!confirm('Delete this shift?'))return;await db.from('management_schedule').delete().eq('id',b.dataset.id);await fetchAll();render();showToast('Deleted.');};});
+  mcEl.querySelectorAll('.sns-sched-entry').forEach(function(b){b.onclick=function(){var e=(state.mgmtSchedule||[]).find(function(s){return s.id===b.dataset.id;});if(e)openSchedModal('',e);};});
   mcEl.querySelectorAll('.sns-people-tab').forEach(function(b){b.onclick=function(){state.peopleTab=b.dataset.ptab;render();};});
   mcEl.querySelectorAll('.sns-reports-tab').forEach(function(b){b.onclick=function(){state.reportsTab=b.dataset.rtab;render();};});
   mcEl.querySelectorAll('.sns-new-announcement').forEach(function(b){b.onclick=function(){openNewAnnouncementModal();};});
@@ -733,11 +742,129 @@ function renderAdminReports(){
   });
   h+='</div>';
   if(sub==='schedule'){
-    h+='<div class="empty"><i class="ti ti-calendar-week" aria-hidden="true"></i>Management schedule coming soon — set up the database table to enable this feature.</div>';
+    h+=renderAdminSchedule();
   } else {
     h+=renderAdminReviews();
   }
   return h;
+}
+
+function renderAdminSchedule(){
+  var entries=state.mgmtSchedule||[];
+  // Week navigator
+  var today=new Date();today.setHours(0,0,0,0);
+  var baseMonday=getWeekStart(today);
+  var wOff=state.schedWeekOffset||0;
+  var weekStart=new Date(baseMonday);weekStart.setDate(baseMonday.getDate()+wOff*7);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+7);
+  var weekLabel=fmtWeekLabel(weekStart);
+  var isNow=wOff===0;
+  // Filter entries for this week
+  var weekEntries=entries.filter(function(e){
+    if(!e.date)return false;
+    var d=new Date(e.date+'T00:00:00');
+    return d>=weekStart&&d<weekEnd;
+  });
+  // Type colors
+  var typeColors={Event:'#4a9d6f',Admin:'#6b8cff','Drop & Set':'#c9a84c','Site Visit':'#e07b54'};
+  var typeBg={Event:'rgba(74,157,111,.15)',Admin:'rgba(107,140,255,.12)','Drop & Set':'rgba(201,168,76,.12)','Site Visit':'rgba(224,123,84,.15)'};
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:8px">';
+  h+='<div class="section-title">Management Schedule</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center">';
+  h+='<div style="display:flex;align-items:center;gap:6px;background:var(--ss-surface2);border:1px solid var(--ss-border);border-radius:4px;padding:3px 8px">';
+  h+='<button class="btn btn-sm sns-sched-prev" style="padding:2px 6px;border:none;font-size:13px"><i class="ti ti-chevron-left" aria-hidden="true"></i></button>';
+  h+='<span style="font-size:11px;min-width:140px;text-align:center">'+weekLabel+'</span>';
+  h+='<button class="btn btn-sm sns-sched-next" style="padding:2px 6px;border:none;font-size:13px"'+(isNow?' disabled':'')+'><i class="ti ti-chevron-right" aria-hidden="true"></i></button>';
+  h+='</div>';
+  h+='<button class="btn btn-gold btn-sm sns-new-sched-entry"><i class="ti ti-plus" aria-hidden="true"></i> Add shift</button>';
+  h+='</div></div>';
+  // Legend
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:1rem">';
+  Object.keys(typeColors).forEach(function(t){
+    h+='<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--ss-muted)"><div style="width:10px;height:10px;border-radius:2px;background:'+typeColors[t]+'"></div>'+t+'</div>';
+  });
+  h+='</div>';
+  // Day grid
+  var days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  h+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:1.5rem">';
+  for(var di=0;di<7;di++){
+    var dayDate=new Date(weekStart);dayDate.setDate(weekStart.getDate()+di);
+    var dayDateStr=dayDate.toISOString().split('T')[0];
+    var isToday=dayDate.toDateString()===today.toDateString();
+    var dayEntries=weekEntries.filter(function(e){return e.date===dayDateStr;});
+    h+='<div style="background:var(--ss-surface2);border:1px solid '+(isToday?'var(--ss-border-gold)':'var(--ss-border)')+';border-radius:6px;padding:8px 6px;min-height:110px">';
+    h+='<div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--ss-muted);margin-bottom:1px">'+days[di]+'</div>';
+    h+='<div style="font-size:16px;font-weight:600;color:'+(isToday?'var(--ss-gold)':'var(--ss-cream)')+';margin-bottom:6px">'+dayDate.getDate()+'</div>';
+    dayEntries.forEach(function(e){
+      var col=typeColors[e.shift_type]||'#8a8270';
+      var bg=typeBg[e.shift_type]||'rgba(138,130,112,.1)';
+      h+='<div style="border-radius:3px;padding:4px 5px;margin-bottom:3px;font-size:10px;background:'+bg+';border-left:2px solid '+col+';cursor:pointer" class="sns-sched-entry" data-id="'+e.id+'">';
+      h+='<div style="font-weight:500;color:var(--ss-cream);line-height:1.2">'+esc(e.title)+'</div>';
+      if(e.start_time)h+='<div style="opacity:.7;font-size:9px;margin-top:1px">'+fmtTime(e.start_time)+(e.end_time?' – '+fmtTime(e.end_time):'')+'</div>';
+      h+='</div>';
+    });
+    h+='<button class="btn sns-new-sched-day btn-sm" data-date="'+dayDateStr+'" style="width:100%;margin-top:4px;background:none;border:1px dashed rgba(255,255,255,.08);border-radius:3px;color:var(--ss-muted);font-size:10px;padding:3px">+ Add</button>';
+    h+='</div>';
+  }
+  h+='</div>';
+  // List view
+  if(!weekEntries.length){
+    h+='<div class="empty"><i class="ti ti-calendar-week" aria-hidden="true"></i>No shifts scheduled for this week.</div>';
+    return h;
+  }
+  h+='<div style="font-size:10px;font-weight:500;color:var(--ss-gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.5rem">This week</div>';
+  h+='<div class="divider-line" style="margin-bottom:.75rem"></div>';
+  weekEntries.forEach(function(e){
+    var col=typeColors[e.shift_type]||'#8a8270';
+    var d=new Date(e.date+'T00:00:00');
+    var dLabel=d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+    h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border);border-radius:6px;padding:11px 13px;margin-bottom:7px;display:flex;align-items:flex-start;gap:10px">';
+    h+='<div style="width:3px;border-radius:2px;align-self:stretch;flex-shrink:0;background:'+col+'"></div>';
+    h+='<div style="flex:1;min-width:0">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:3px">';
+    h+='<div><div style="font-size:13px;font-weight:500;color:var(--ss-cream)">'+esc(e.title)+'</div>';
+    h+='<div style="font-size:11px;color:var(--ss-muted)">'+dLabel+(e.start_time?' &middot; '+fmtTime(e.start_time)+(e.end_time?' – '+fmtTime(e.end_time):''):'')+'</div></div>';
+    h+='<div style="display:flex;align-items:center;gap:6px">';
+    h+='<span style="font-size:9px;font-weight:500;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:.05em;background:'+typeBg[e.shift_type]+';color:'+col+'">'+esc(e.shift_type)+'</span>';
+    h+='<button class="btn btn-sm sns-edit-sched" data-id="'+e.id+'" style="padding:3px 6px"><i class="ti ti-pencil" aria-hidden="true"></i></button>';
+    h+='<button class="btn btn-sm btn-danger sns-del-sched" data-id="'+e.id+'" style="padding:3px 6px"><i class="ti ti-trash" aria-hidden="true"></i></button>';
+    h+='</div></div>';
+    if(e.notes)h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:6px;font-style:italic;border-top:1px solid var(--ss-border);padding-top:6px;line-height:1.5">'+esc(e.notes)+'</div>';
+    h+='</div></div>';
+  });
+  return h;
+}
+
+function openSchedModal(prefillDate,existingEntry){
+  var isEdit=!!existingEntry;
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-sched';
+  var types=['Event','Admin','Drop & Set','Site Visit'];
+  var h='<div class="modal"><div class="modal-title">'+(isEdit?'Edit':'Add')+' Shift <button class="btn btn-sm sns-close-modal" data-modal="modal-sched"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Title</label><input type="text" id="sched-title" value="'+(isEdit?esc(existingEntry.title||''):'')+'" placeholder="e.g. Yale site visit"></div>';
+  h+='<div class="form-group"><label class="form-label">Type</label><select id="sched-type">';
+  types.forEach(function(t){h+='<option value="'+t+'"'+(isEdit&&existingEntry.shift_type===t?' selected':'')+'>'+t+'</option>';});
+  h+='</select></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="sched-date" value="'+(isEdit?esc(existingEntry.date||''):(prefillDate||''))+'"></div><div class="form-group"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Start time</label><input type="time" id="sched-start" value="'+(isEdit?esc(existingEntry.start_time||''):'')+'" ></div><div class="form-group"><label class="form-label">End time</label><input type="time" id="sched-end" value="'+(isEdit?esc(existingEntry.end_time||''):'')+'" ></div></div>';
+  h+='<div class="form-group"><label class="form-label">Notes <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="sched-notes" style="min-height:80px">'+(isEdit?esc(existingEntry.notes||''):'')+'</textarea></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-sched">Cancel</button><button class="btn btn-gold sns-do-sched"><i class="ti ti-check" aria-hidden="true"></i> '+(isEdit?'Save':'Add shift')+'</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-sched').onclick=async function(){
+    var title=(document.getElementById('sched-title')||{}).value;if(title)title=title.trim();
+    var type=(document.getElementById('sched-type')||{}).value;
+    var date=(document.getElementById('sched-date')||{}).value;
+    var start=(document.getElementById('sched-start')||{}).value||null;
+    var end=(document.getElementById('sched-end')||{}).value||null;
+    var notes=(document.getElementById('sched-notes')||{}).value;if(notes)notes=notes.trim()||null;
+    if(!title||!date){showToast('Title and date required.',false);return;}
+    if(isEdit){
+      await db.from('management_schedule').update({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes}).eq('id',existingEntry.id);
+    }else{
+      await db.from('management_schedule').insert({title:title,shift_type:type,date:date,start_time:start,end_time:end,notes:notes});
+    }
+    closeModal('modal-sched');await fetchAll();render();showToast(isEdit?'Shift updated!':'Shift added!');
+  };
 }
 
 function renderAdminAnnouncements(){
