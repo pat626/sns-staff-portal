@@ -942,7 +942,11 @@ function renderAdminAnnouncements(){
     h+='<div class="event-card" style="margin-bottom:10px">';
     h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
     h+='<div><div style="font-size:15px;font-weight:500;color:var(--ss-cream);margin-bottom:4px">'+esc(a.title)+'</div>';
-    if(isTargeted)h+='<div style="font-size:10px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:var(--ss-gold);padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:6px"><i class="ti ti-user" aria-hidden="true"></i> '+esc(a.target_email)+'</div>';
+    if(isTargeted){
+      var tEmails=a.target_email.split(',');
+      var tNames=tEmails.map(function(em){var s=(state.staffDirectory||[]).find(function(sd){return sd.email&&sd.email.toLowerCase()===em.trim().toLowerCase();});return s?s.name:em.trim();});
+      h+='<div style="font-size:10px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:var(--ss-gold);padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:6px"><i class="ti ti-users" aria-hidden="true"></i> '+esc(tNames.join(', '))+'</div>';
+    }
     h+='<div style="font-size:13px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div>';
     if(a.attachment_url&&a.attachment_type==='image')h+='<img src="'+esc(a.attachment_url)+'" style="max-width:100%;border-radius:4px;margin-top:8px;border:1px solid var(--ss-border)">';
     else if(a.attachment_url)h+='<a href="'+esc(a.attachment_url)+'" target="_blank" class="btn btn-sm" style="margin-top:8px"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> View attachment</a>';
@@ -1076,7 +1080,11 @@ function renderEmployee(){
   if(!state.employeeName)return renderStaffLogin();
   var myEm=(state.employeeEmail||'').toLowerCase().trim();
   var myBids=state.bids.filter(function(b){return myEm&&b.staff_email?b.staff_email.toLowerCase().trim()===myEm:b.staff_name===state.employeeName;});
-  var myAnns=(state.announcements||[]).filter(function(a){return !a.target_email||(myEm&&a.target_email.toLowerCase()===myEm);});
+  var myAnns=(state.announcements||[]).filter(function(a){
+    if(!a.target_email)return true;
+    var targets=a.target_email.split(',').map(function(e){return e.trim().toLowerCase();});
+    return myEm&&targets.indexOf(myEm)>=0;
+  });
   var myPickedBids=myBids.filter(function(b){return b.selected;});
   var myPickedIds=myPickedBids.map(function(b){return b.event_id;});
   var myPickedEvents=state.events.filter(function(e){return myPickedIds.indexOf(e.id)>=0;});
@@ -1482,8 +1490,8 @@ function openNewAnnouncementModal(){
       attachUrl=afUrl.data&&afUrl.data.publicUrl?afUrl.data.publicUrl:null;
       attachType=af.type.startsWith('image/')?'image':'pdf';
     }
-    var inserts=allChecked?[{title:title,body:body,target_email:null,attachment_url:attachUrl,attachment_type:attachType}]:targets.map(function(t){return{title:title,body:body,target_email:t,attachment_url:attachUrl,attachment_type:attachType};});
-    await db.from('announcements').insert(inserts);
+    var targetStr=allChecked?null:targets.join(',');
+    await db.from('announcements').insert({title:title,body:body,target_email:targetStr,attachment_url:attachUrl,attachment_type:attachType});
     closeModal('modal-announcement');await fetchAll();render();showToast('Announcement posted!');
   };
 }
