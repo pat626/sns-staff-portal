@@ -943,7 +943,10 @@ function renderAdminAnnouncements(){
     h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
     h+='<div><div style="font-size:15px;font-weight:500;color:var(--ss-cream);margin-bottom:4px">'+esc(a.title)+'</div>';
     if(isTargeted)h+='<div style="font-size:10px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.25);color:var(--ss-gold);padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:6px"><i class="ti ti-user" aria-hidden="true"></i> '+esc(a.target_email)+'</div>';
-    h+='<div style="font-size:13px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div></div>';
+    h+='<div style="font-size:13px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div>';
+    if(a.attachment_url&&a.attachment_type==='image')h+='<img src="'+esc(a.attachment_url)+'" style="max-width:100%;border-radius:4px;margin-top:8px;border:1px solid var(--ss-border)">';
+    else if(a.attachment_url)h+='<a href="'+esc(a.attachment_url)+'" target="_blank" class="btn btn-sm" style="margin-top:8px"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> View attachment</a>';
+    h+='</div>';
     h+='<button class="btn btn-sm btn-danger sns-del-announcement" data-id="'+a.id+'" style="flex-shrink:0"><i class="ti ti-trash" aria-hidden="true"></i></button></div>';
     h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:8px">'+new Date(a.created_at).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric',year:'numeric'})+'</div>';
     h+='</div>';
@@ -1103,6 +1106,8 @@ function renderEmployee(){
       h+='<div style="background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-left:3px solid var(--ss-gold);border-radius:6px;padding:12px 14px;margin-bottom:8px">';
       h+='<div style="font-size:13px;font-weight:500;color:var(--ss-cream);margin-bottom:4px">'+esc(a.title)+'</div>';
       h+='<div style="font-size:12px;color:var(--ss-muted);line-height:1.6;white-space:pre-wrap">'+esc(a.body)+'</div>';
+      if(a.attachment_url&&a.attachment_type==='image')h+='<img src="'+esc(a.attachment_url)+'" style="max-width:100%;border-radius:4px;margin-top:8px;border:1px solid var(--ss-border)">';
+      else if(a.attachment_url)h+='<a href="'+esc(a.attachment_url)+'" target="_blank" class="btn btn-sm" style="margin-top:8px"><i class="ti ti-paperclip" aria-hidden="true"></i> View attachment</a>';
       h+='<div style="font-size:10px;color:var(--ss-muted);margin-top:6px">'+new Date(a.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+'</div>';
       h+='</div>';
     });
@@ -1445,6 +1450,7 @@ function openNewAnnouncementModal(){
     h+='<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ss-text);cursor:pointer"><input type="checkbox" class="ann-staff-cb" value="'+esc(s.email)+'"> '+esc(s.name)+'</label>';
   });
   h+='</div>';
+  h+='<div class="form-group"><label class="form-label">Attachment <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(PDF or image, optional)</span></label><input type="file" id="ann-file" accept=".pdf,image/*" style="font-size:12px;color:var(--ss-muted)"></div>';
   h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-announcement">Cancel</button><button class="btn btn-gold sns-do-announcement"><i class="ti ti-speakerphone" aria-hidden="true"></i> Post</button></div></div>';
   m.innerHTML=h;document.body.appendChild(m);
   m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
@@ -1462,8 +1468,21 @@ function openNewAnnouncementModal(){
       document.querySelectorAll('.ann-staff-cb:checked').forEach(function(c){targets.push(c.value);});
     }
     if(!allChecked&&!targets.length){showToast('Select at least one target or choose All staff.',false);return;}
-    // Insert one announcement per target, or one with null for all staff
-    var inserts=allChecked?[{title:title,body:body,target_email:null}]:targets.map(function(t){return{title:title,body:body,target_email:t};});
+    // Upload attachment if provided
+    var attachUrl=null;var attachType=null;
+    var annFile=document.getElementById('ann-file');
+    if(annFile&&annFile.files&&annFile.files[0]){
+      var af=annFile.files[0];
+      var afExt=af.name.split('.').pop().toLowerCase();
+      var afPath='ann-'+Date.now()+'.'+afExt;
+      showToast('Uploading attachment...');
+      var afRes=await db.storage.from('event-documents').upload(afPath,af,{upsert:true});
+      if(afRes.error){showToast('Attachment upload failed: '+(afRes.error.message||'error'),false);return;}
+      var afUrl=db.storage.from('event-documents').getPublicUrl(afPath);
+      attachUrl=afUrl.data&&afUrl.data.publicUrl?afUrl.data.publicUrl:null;
+      attachType=af.type.startsWith('image/')?'image':'pdf';
+    }
+    var inserts=allChecked?[{title:title,body:body,target_email:null,attachment_url:attachUrl,attachment_type:attachType}]:targets.map(function(t){return{title:title,body:body,target_email:t,attachment_url:attachUrl,attachment_type:attachType};});
     await db.from('announcements').insert(inserts);
     closeModal('modal-announcement');await fetchAll();render();showToast('Announcement posted!');
   };
