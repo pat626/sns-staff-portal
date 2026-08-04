@@ -1874,6 +1874,8 @@ function fmtPayPeriod(pp){
 function exportHours(){
   var entries=state.timeclockEntries||[];
   if(!entries.length){showToast('No hours to export.',false);return;}
+
+  // Group by pay period, then by staff (matched by name since email can be missing)
   var ppMap={};var ppOrder=[];
   entries.forEach(function(t){
     if(!t.clocked_in)return;
@@ -1884,39 +1886,67 @@ function exportHours(){
     var pp=getPayPeriod(dateTs);
     var ppKey=pp.num;
     if(!ppMap[ppKey]){ppMap[ppKey]={label:fmtPayPeriod(pp),staff:{},totalMs:0};ppOrder.push(ppKey);}
-    var k=getKey(t.staff_email,t.staff_name);
-    if(!ppMap[ppKey].staff[k])ppMap[ppKey].staff[k]={name:t.staff_name,email:t.staff_email||'',entries:[],totalMs:0};
-    ppMap[ppKey].staff[k].entries.push({entry:t,ms:ms,ev:ev});
-    ppMap[ppKey].staff[k].totalMs+=ms;
+    // Use name as key to consolidate entries with missing email
+    var staffKey=t.staff_name;
+    var staffEmail=t.staff_email||'';
+    if(!ppMap[ppKey].staff[staffKey]){
+      ppMap[ppKey].staff[staffKey]={name:t.staff_name,email:staffEmail,entries:[],totalMs:0};
+    } else if(staffEmail&&!ppMap[ppKey].staff[staffKey].email){
+      ppMap[ppKey].staff[staffKey].email=staffEmail;
+    }
+    ppMap[ppKey].staff[staffKey].entries.push({entry:t,ms:ms,ev:ev});
+    ppMap[ppKey].staff[staffKey].totalMs+=ms;
     ppMap[ppKey].totalMs+=ms;
   });
   ppOrder.sort(function(a,b){return b-a;});
+
   var lines=[];
   lines.push('SHAKEN & STIRRED EVENTS');
   lines.push('PAYROLL EXPORT');
   lines.push('Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'}));
   lines.push('Prepared for: Patrick Williams — Pat@forkhospitality.com');
+
   ppOrder.forEach(function(ppKey){
     var pp=ppMap[ppKey];
     lines.push('');
     lines.push('========================================');
     lines.push('PAY PERIOD: '+pp.label);
+    lines.push('PAY PERIOD TOTAL: '+(pp.totalMs/3600000).toFixed(2)+' hrs');
     lines.push('========================================');
-    lines.push('Employee,Email,Type,Event/Note,Role,Date,Hours');
+    lines.push('');
+    lines.push('Employee,Email,Role,Type,Event/Note,Date,Hours');
+
     var staffList=Object.values(pp.staff).sort(function(a,b){return a.name.localeCompare(b.name);});
     staffList.forEach(function(s){
-      s.entries.forEach(function(item){
-        var t=item.entry;var ev=item.ev;
-        var label=ev?ev.name:(t.note&&t.note!=='Event'&&t.note!=='Admin'?t.note.replace(/^Drop[^|]*\| /,''):'');
-        var type=t.event_id?'Event':(t.note==='Admin'?'Admin':t.note&&t.note.startsWith('Drop')?'Drop & Set':'General');
-        var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):'';
-        lines.push('"'+s.name+'","'+(s.email||'')+'","'+type+'","'+label+'","'+(t.role||'')+'","'+date+'","'+(item.ms/3600000).toFixed(2)+'"');
+      // Sort entries by date
+      s.entries.sort(function(a,b){
+        var da=a.ev?new Date(a.ev.date+'T12:00:00').getTime():(a.entry.clocked_in||0);
+        var db=b.ev?new Date(b.ev.date+'T12:00:00').getTime():(b.entry.clocked_in||0);
+        return da-db;
       });
-      lines.push('"'+s.name+'","","","","","SUBTOTAL","'+(s.totalMs/3600000).toFixed(2)+'"');
+      s.entries.forEach(function(item,i){
+        var t=item.entry;var ev=item.ev;
+        // Clean up type label
+        var rawNote=t.note||'';
+        var isDrop=rawNote.startsWith('Drop')||rawNote==='Drop';
+        var type=t.note==='Admin'?'Admin':isDrop?'Drop & Set':t.event_id?'Event':'General';
+        // Clean up event/note label
+        var label=ev?ev.name:(!isDrop&&rawNote&&rawNote!=='Admin'&&rawNote!=='Event'&&rawNote!=='General'?rawNote:'');
+        var role=t.role||'';
+        var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):(ev?ev.date:'');
+        // First entry shows name and email, subsequent rows just indent
+        var nameCol=i===0?'"'+s.name+'"':'""';
+        var emailCol=i===0?'"'+(s.email||'')+'"':'""';
+        lines.push(nameCol+',"'+emailCol+'","'+role+'","'+type+'","'+label+'","'+date+'","'+(item.ms/3600000).toFixed(2)+'"');
+      });
+      // Only show subtotal if more than one entry
+      if(s.entries.length>1){
+        lines.push('"","","","","","SUBTOTAL","'+(s.totalMs/3600000).toFixed(2)+' hrs"');
+      }
       lines.push('');
     });
-    lines.push('"","","","","","PAY PERIOD TOTAL","'+(pp.totalMs/3600000).toFixed(2)+'"');
   });
+
   var csv=lines.join('\n');
   var a=document.createElement('a');
   a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
