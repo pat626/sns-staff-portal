@@ -410,8 +410,8 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-del-announcement').forEach(function(b){b.onclick=function(){deleteAnnouncement(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remove-doc').forEach(function(b){b.onclick=function(){removeEventDocument(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){try{openStaffHoursModal(b.dataset.name);}catch(e){showToast('Error opening details: '+e.message,false);console.error(e);}};});
-  mcEl.querySelectorAll('.sns-export-csv').forEach(function(b){b.onclick=function(){exportHours();};}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){openPayrollModal();};});
-  mcEl.querySelectorAll('.sns-export-weekly').forEach(function(b){b.onclick=function(){exportWeeklyReport();};});
+  // csv export removed}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){exportHours();};});
+  // weekly report removed});
   mcEl.querySelectorAll('.sns-approve').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'approved');};});
   mcEl.querySelectorAll('.sns-deny').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'denied');};});
   mcEl.querySelectorAll('.sns-add-staff').forEach(function(b){b.onclick=function(){openAddStaffModal();};});
@@ -668,8 +668,6 @@ function renderAdminHours(){
   h+='<div class="export-wrap" style="position:relative;display:inline-block">';
   h+='<button class="btn btn-sm sns-export-menu"><i class="ti ti-download" aria-hidden="true"></i> Export <i class="ti ti-chevron-down" style="font-size:11px;margin-left:2px" aria-hidden="true"></i></button>';
   h+='<div id="export-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-radius:4px;z-index:50;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,.3)">';
-  h+='<button class="sns-export-csv export-item"><i class="ti ti-table" aria-hidden="true"></i> Hours CSV</button>';
-  h+='<button class="sns-export-weekly export-item"><i class="ti ti-calendar-week" aria-hidden="true"></i> Weekly report</button>';
   h+='<button class="sns-payroll export-item"><i class="ti ti-cash" aria-hidden="true"></i> Payroll export</button>';
   h+='</div></div></div></div><div class="divider-line"></div>';
   h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.filter(function(r){return r.weekMs>0;}).length+'</div><div class="stat-label">Staff this week</div></div>';
@@ -1897,6 +1895,7 @@ function exportHours(){
   lines.push('SHAKEN & STIRRED EVENTS');
   lines.push('PAYROLL EXPORT');
   lines.push('Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'}));
+  lines.push('Prepared for: Patrick Williams — Pat@forkhospitality.com');
   ppOrder.forEach(function(ppKey){
     var pp=ppMap[ppKey];
     lines.push('');
