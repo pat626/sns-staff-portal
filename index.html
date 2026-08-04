@@ -410,7 +410,7 @@ function attachListeners(){
   mcEl.querySelectorAll('.sns-del-announcement').forEach(function(b){b.onclick=function(){deleteAnnouncement(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-del-event').forEach(function(b){b.onclick=function(){deleteEvent(b.dataset.id);};}); mcEl.querySelectorAll('.sns-remove-doc').forEach(function(b){b.onclick=function(){removeEventDocument(b.dataset.id);};});
   mcEl.querySelectorAll('.sns-staff-hours').forEach(function(b){b.onclick=function(){try{openStaffHoursModal(b.dataset.name);}catch(e){showToast('Error opening details: '+e.message,false);console.error(e);}};});
-  // csv export removed}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(){exportHours();};});
+  // csv export removed}); mcEl.querySelectorAll('.sns-payroll').forEach(function(b){b.onclick=function(e){e.stopPropagation();var dd=document.getElementById('export-dropdown');if(dd)dd.style.display='none';exportHours();};});
   // weekly report removed});
   mcEl.querySelectorAll('.sns-approve').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'approved');};});
   mcEl.querySelectorAll('.sns-deny').forEach(function(b){b.onclick=function(){resolveRequest(b.dataset.id,'denied');};});
@@ -665,11 +665,11 @@ function renderAdminHours(){
   h+='<span style="font-size:11px;color:var(--ss-text);min-width:140px;text-align:center">'+dispLabel+'</span>';
   h+='<button class="btn btn-sm sns-week-next" style="padding:2px 6px;border:none;font-size:13px"'+(isCurrentWeek?' disabled title="Current week"':' title="Next week"')+'><i class="ti ti-chevron-right" aria-hidden="true"></i></button>';
   h+='</div>';
-  h+='<div class="export-wrap" style="position:relative;display:inline-block">';
-  h+='<button class="btn btn-sm sns-export-menu"><i class="ti ti-download" aria-hidden="true"></i> Export <i class="ti ti-chevron-down" style="font-size:11px;margin-left:2px" aria-hidden="true"></i></button>';
-  h+='<div id="export-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--ss-surface);border:1px solid var(--ss-border-gold);border-radius:4px;z-index:50;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,.3)">';
-  h+='<button class="sns-payroll export-item"><i class="ti ti-cash" aria-hidden="true"></i> Payroll export</button>';
-  h+='</div></div></div></div><div class="divider-line"></div>';
+  h+='<button class="btn btn-sm sns-payroll"><i class="ti ti-download" aria-hidden="true"></i> Payroll export</button>';
+
+
+
+  h+='</div></div><div class="divider-line"></div>';
   h+='<div class="stats-row"><div class="stat-card"><div class="stat-val">'+rows.filter(function(r){return r.weekMs>0;}).length+'</div><div class="stat-label">Staff this week</div></div>';
   h+='<div class="stat-card"><div class="stat-val">'+fmtH(totalMs)+'</div><div class="stat-label">'+(isCurrentWeek?'Hours this week':'Hours that week')+'</div></div>';
   h+='<div class="stat-card"><div class="stat-val" style="color:#e6a032">'+active+'</div><div class="stat-label">Clocked in now</div></div></div>';
