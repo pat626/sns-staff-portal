@@ -1858,7 +1858,7 @@ async function saveEditedBidRole(bidId,eventId){
 }
 
 function getPayPeriod(ts){
-  var anchor=new Date('2025-07-06T00:00:00').getTime();
+  var anchor=new Date('2025-07-20T00:00:00').getTime();
   var periodMs=14*24*60*60*1000;
   var diff=ts-anchor;
   var periodNum=Math.floor(diff/periodMs);
