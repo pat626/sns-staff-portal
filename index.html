@@ -1857,6 +1857,314 @@ async function saveEditedBidRole(bidId,eventId){
   closeModal('modal-bids');openBidsModal(eventId);render();showToast('Role updated!');
 }
 
+function openAddTimeclockModal(){
+  var today=new Date().toISOString().split('T')[0];
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-add';
+  var h='<div class="modal"><div class="modal-title">Add Time Entry <button class="btn btn-sm sns-close-modal" data-modal="modal-tc-add"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Staff name</label><input type="text" id="tca-name" placeholder="Jane Smith"></div>';
+  h+='<div class="form-group"><label class="form-label">Type</label><select id="tca-type"><option value="Event">Event</option><option value="Admin">Admin</option><option value="Drop">Drop &amp; Set</option></select></div>';
+  h+='<div class="form-group"><label class="form-label">Linked event <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><select id="tca-event"><option value="">— None —</option>';
+  (state.events||[]).forEach(function(e){h+='<option value="'+e.id+'">'+esc(e.name)+' ('+e.date+')</option>';});
+  h+='</select></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="tca-date" value="'+today+'"></div><div class="form-group"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Clock in</label><input type="time" id="tca-in"></div><div class="form-group"><label class="form-label">Clock out</label><input type="time" id="tca-out"></div></div>';
+  h+='<div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="text" id="tca-note" placeholder="e.g. Tasting - Elm St"></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-tc-add">Cancel</button><button class="btn btn-gold sns-do-tc-add"><i class="ti ti-plus" aria-hidden="true"></i> Add entry</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-tc-add').onclick=async function(){
+    var name=(document.getElementById('tca-name')||{}).value;if(name)name=name.trim();
+    var type=(document.getElementById('tca-type')||{}).value||'Event';
+    var eventId=(document.getElementById('tca-event')||{}).value||null;
+    var date=(document.getElementById('tca-date')||{}).value;
+    var inTime=(document.getElementById('tca-in')||{}).value;
+    var outTime=(document.getElementById('tca-out')||{}).value;
+    var note=(document.getElementById('tca-note')||{}).value;if(note)note=note.trim();
+    if(!name||!date||!inTime){showToast('Name, date and clock-in time required.',false);return;}
+    var ci=new Date(date+'T'+inTime).getTime();
+    var co=outTime?new Date(date+'T'+outTime).getTime():null;
+    if(co&&co<=ci){showToast('Clock-out must be after clock-in.',false);return;}
+    var noteStr=note||type;
+    await db.from('timeclock').insert({staff_name:name,event_id:eventId||null,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:noteStr});
+    closeModal('modal-tc-add');await fetchAll();render();showToast('Entry added!');
+  };
+}
+
+function openEditTimeclockModal(entryId){
+  var t=(state.timeclockEntries||[]).find(function(e){return e.id===entryId;});if(!t)return;
+  function toDS(ts){if(!ts)return'';return new Date(ts).toISOString().split('T')[0];}
+  function toTS(ts){if(!ts)return'';var d=new Date(ts);return pad(d.getHours())+':'+pad(d.getMinutes());}
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-tc-edit';
+  var h='<div class="modal"><div class="modal-title">Edit Time Entry <button class="btn btn-sm sns-close-modal" data-modal="modal-tc-edit"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Staff name</label><input type="text" id="tce-name" value="'+esc(t.staff_name)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Type</label><select id="tce-type"><option value="Event"'+((!t.note||t.note==='Event')?' selected':'')+'>Event</option><option value="Admin"'+(t.note==='Admin'?' selected':'')+'>Admin</option><option value="Drop"'+((t.note&&t.note.startsWith('Drop'))?' selected':'')+'>Drop &amp; Set</option></select></div>';
+  h+='<div class="form-group"><label class="form-label">Linked event <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><select id="tce-event"><option value="">— None —</option>';
+  (state.events||[]).forEach(function(e){h+='<option value="'+e.id+'"'+(t.event_id===e.id?' selected':'')+'>'+esc(e.name)+' ('+e.date+')</option>';});
+  h+='</select></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Date</label><input type="date" id="tce-date" value="'+toDS(t.clocked_in)+'"></div><div class="form-group"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label class="form-label">Clock in</label><input type="time" id="tce-in" value="'+toTS(t.clocked_in)+'"></div><div class="form-group"><label class="form-label">Clock out</label><input type="time" id="tce-out" value="'+toTS(t.clocked_out)+'"></div></div>';
+  h+='<div class="form-group"><label class="form-label">Note <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><input type="text" id="tce-note" value="'+esc(t.note&&!['Event','Admin'].includes(t.note)&&!t.note.startsWith('Drop')?t.note:'')+'"></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-tc-edit">Cancel</button><button class="btn btn-gold sns-do-tc-edit"><i class="ti ti-check" aria-hidden="true"></i> Save</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-tc-edit').onclick=async function(){
+    var name=(document.getElementById('tce-name')||{}).value;if(name)name=name.trim();
+    var type=(document.getElementById('tce-type')||{}).value||'Event';
+    var eventId=(document.getElementById('tce-event')||{}).value||null;
+    var date=(document.getElementById('tce-date')||{}).value;
+    var inTime=(document.getElementById('tce-in')||{}).value;
+    var outTime=(document.getElementById('tce-out')||{}).value;
+    var note=(document.getElementById('tce-note')||{}).value;if(note)note=note.trim();
+    if(!name||!date||!inTime){showToast('Name, date and clock-in time required.',false);return;}
+    var ci=new Date(date+'T'+inTime).getTime();
+    var co=outTime?new Date(date+'T'+outTime).getTime():null;
+    if(co&&co<=ci){showToast('Clock-out must be after clock-in.',false);return;}
+    var noteStr=note||type;
+    await db.from('timeclock').update({staff_name:name,event_id:eventId||null,clocked_in:ci,clocked_out:co||null,total_ms:co?co-ci:0,note:noteStr}).eq('id',entryId);
+    closeModal('modal-tc-edit');await fetchAll();render();showToast('Entry updated!');
+  };
+}
+
+function openDropModal(staffName){
+  var today=new Date().toISOString().split('T')[0];
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-drop';
+  var h='<div class="modal"><div class="modal-title">Log Drop Shift <button class="btn btn-sm sns-close-modal" data-modal="modal-drop"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem">';
+  h+='<div style="font-size:12px;color:var(--ss-muted);margin-bottom:2px">Staff member</div>';
+  h+='<div style="font-size:14px;font-weight:500;color:var(--ss-cream)">'+esc(staffName)+'</div></div>';
+  h+='<div style="display:inline-flex;align-items:center;gap:5px;background:rgba(201,168,76,.1);border:1px solid rgba(201,168,76,.3);border-radius:3px;padding:3px 10px;font-size:11px;color:var(--ss-gold);font-weight:500;margin-bottom:1rem"><i class="ti ti-clock-plus" aria-hidden="true"></i>3 hours will be logged</div>';
+  h+='<div class="form-group"><label class="form-label">Event name</label><input type="text" id="drop-event" placeholder="e.g. Smith Wedding…"></div>';
+  h+='<div class="form-group"><label class="form-label">Date of drop</label><input type="date" id="drop-date" value="'+today+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Notes <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="drop-notes" style="min-height:60px"></textarea></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-drop">Cancel</button><button class="btn btn-gold sns-do-drop"><i class="ti ti-clock-plus" aria-hidden="true"></i> Log 3h drop</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-drop').onclick=async function(){
+    var eventName=(document.getElementById('drop-event')||{}).value;if(eventName)eventName=eventName.trim();
+    var date=(document.getElementById('drop-date')||{}).value;
+    var notes=(document.getElementById('drop-notes')||{}).value;if(notes)notes=notes.trim();
+    if(!date){showToast('Please select a date.',false);return;}
+    var threeH=3*60*60*1000;
+    var ci=new Date(date+'T12:00:00').getTime();
+    var co=ci+threeH;
+    var noteStr='Drop — 3h'+(eventName?' | Event: '+eventName:'')+(notes?' | '+notes:'');
+    await db.from('timeclock').insert({staff_name:staffName,clocked_in:ci,clocked_out:co,total_ms:threeH,note:noteStr});
+    closeModal('modal-drop');await fetchAll();render();showToast(staffName+' — 3h drop logged!');
+  };
+}
+
+function openShiftRequestModal(eventId){
+  var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;
+  var existing=(state.shiftRequests||[]).find(function(r){return r.event_id===eventId&&r.requester_name===state.employeeName&&r.status==='pending';});
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-shift-req';
+  var h='<div class="modal"><div class="modal-title">Request Change <button class="btn btn-sm sns-close-modal" data-modal="modal-shift-req"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  if(existing){
+    h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i>You already have a pending '+existing.request_type+' request for this event.</div>';
+    h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-shift-req">Close</button></div>';
+  }else{
+    h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:12px 14px;margin-bottom:1.25rem">';
+    h+='<div style="font-family:var(--ss-font-serif,serif);font-size:15px;color:var(--ss-cream);margin-bottom:4px">'+esc(e.name)+'</div>';
+    h+='<div style="font-size:12px;color:var(--ss-muted)">'+fmtDate(e.date)+(e.start_time?' · '+esc(e.start_time):'')+'</div></div>';
+    h+='<div class="form-group"><label class="form-label">What would you like to do?</label><select id="sr-type" class="sns-sr-type">';
+    h+='<option value="giveup">Give up this shift</option><option value="swap">Swap with another staff member</option></select></div>';
+    h+='<div id="sr-swap-fields" style="display:none">';
+    h+='<div class="form-group"><label class="form-label">Swap with — their name</label><input type="text" id="sr-swap-name" placeholder="Staff member name"></div>';
+    h+='<div class="form-group"><label class="form-label">Their email</label><input type="email" id="sr-swap-email" placeholder="their@email.com"></div></div>';
+    h+='<div class="form-group"><label class="form-label">Reason <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--ss-muted)">(optional)</span></label><textarea id="sr-reason" placeholder="Let the admin know why…"></textarea></div>';
+    h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-shift-req">Cancel</button><button class="btn btn-gold sns-do-shift-req" data-eid="'+eventId+'"><i class="ti ti-send" aria-hidden="true"></i> Submit request</button></div>';
+  }
+  h+='</div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  var srSel=m.querySelector('#sr-type');if(srSel)srSel.onchange=function(){var sf=m.querySelector('#sr-swap-fields');if(sf)sf.style.display=this.value==='swap'?'block':'none';};
+  if(!existing){var sb=m.querySelector('.sns-do-shift-req');if(sb)sb.onclick=function(){submitShiftRequest(eventId);};}
+}
+
+function openAddStaffModal(){
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-add-staff';
+  var h='<div class="modal"><div class="modal-title">Add Staff Member <button class="btn btn-sm sns-close-modal" data-modal="modal-add-staff"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Full name</label><input type="text" id="sa-name" placeholder="Jane Smith"></div>';
+  h+='<div class="form-group"><label class="form-label">Email</label><input type="email" id="sa-email" placeholder="jane@email.com"></div>';
+  h+='<div class="form-group"><label class="form-label">Primary role</label><select id="sa-role"><option value="">— Select —</option>';
+  ROLES.forEach(function(r){h+='<option value="'+r+'">'+r+'</option>';});
+  h+='</select></div><div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-add-staff">Cancel</button><button class="btn btn-gold sns-do-add-staff"><i class="ti ti-plus" aria-hidden="true"></i> Add</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-add-staff').onclick=function(){saveNewStaff();};
+}
+
+function openEditStaffModal(staffId){
+  var s=(state.staffDirectory||[]).find(function(st){return st.id===staffId;});if(!s)return;
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-edit-staff';
+  var h='<div class="modal"><div class="modal-title">Edit Staff Member <button class="btn btn-sm sns-close-modal" data-modal="modal-edit-staff"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="form-group"><label class="form-label">Full name</label><input type="text" id="se-name" value="'+esc(s.name)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Email</label><input type="email" id="se-email" value="'+esc(s.email)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Primary role</label><select id="se-role"><option value="">— Select —</option>';
+  ROLES.forEach(function(r){h+='<option value="'+r+'"'+(s.role===r?' selected':'')+'>'+r+'</option>';});
+  h+='</select></div><div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-edit-staff">Cancel</button><button class="btn btn-gold sns-do-edit-staff" data-id="'+staffId+'"><i class="ti ti-check" aria-hidden="true"></i> Save</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-do-edit-staff').onclick=function(){saveEditedStaff(staffId);};
+}
+
+function openEditBidRoleModal(bidId,staffName,currentRole,eventId){
+  var ev=state.events.find(function(e){return e.id===eventId;});
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-edit-bid-role';
+  var h='<div class="modal"><div class="modal-title">Change Role <button class="btn btn-sm sns-close-modal" data-modal="modal-edit-bid-role"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem">';
+  h+='<div style="font-size:13px;font-weight:500;color:var(--ss-cream)">'+esc(staffName)+'</div>';
+  h+='<div style="font-size:11px;color:var(--ss-muted);margin-top:2px">'+(ev?esc(ev.name):'')+'</div></div>';
+  h+='<div class="form-group"><label class="form-label">Role</label><select id="ebr-role">';
+  ROLES.forEach(function(r){h+='<option value="'+r+'"'+(r===currentRole?' selected':'')+'>'+r+'</option>';});
+  h+='</select></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-edit-bid-role">Cancel</button><button class="btn btn-gold sns-save-bid-role"><i class="ti ti-check" aria-hidden="true"></i> Save</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-save-bid-role').onclick=function(){saveEditedBidRole(bidId,eventId);};
+}
+
+function openEditHoursModal(entryId,staffName,currentHrs){
+  var t=state.timeEntries.find(function(te){return te.id===entryId;});if(!t)return;
+  var ev=state.events.find(function(e){return e.id===t.event_id;});
+  var h2=parseFloat(currentHrs)||0;var hrs=Math.floor(h2);var mins=Math.round((h2%1)*60);
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-edithours';
+  var mh='<div class="modal"><div class="modal-title">Edit Hours <button class="btn btn-sm sns-close-modal" data-modal="modal-edithours"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  mh+='<div style="background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem;font-size:13px">';
+  mh+='<div style="font-weight:500;color:var(--ss-cream)">'+esc(staffName)+'</div>';
+  mh+='<div style="color:var(--ss-muted);margin-top:2px">'+(ev?esc(ev.name)+' — '+fmtDate(ev.date):'Unknown event')+'</div></div>';
+  mh+='<div class="form-row"><div class="form-group"><label class="form-label">Hours</label><input type="number" id="eh-hours" min="0" max="24" step="1" value="'+hrs+'"></div>';
+  mh+='<div class="form-group"><label class="form-label">Minutes</label><input type="number" id="eh-mins" min="0" max="59" step="1" value="'+mins+'"></div></div>';
+  mh+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-edithours">Cancel</button><button class="btn btn-gold sns-save-hours"><i class="ti ti-check" aria-hidden="true"></i> Save</button></div></div>';
+  m.innerHTML=mh;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-save-hours').onclick=async function(){
+    var eh=parseFloat(document.getElementById('eh-hours').value)||0;
+    var em=parseFloat(document.getElementById('eh-mins').value)||0;
+    var totalMs=Math.round((eh*60+em)*60000);
+    await db.from('time_entries').update({total_ms:totalMs,clocked_in:null,clocked_out:Date.now()}).eq('id',entryId);
+    closeModal('modal-edithours');closeModal('modal-staffhours');
+    await fetchAll();render();openStaffHoursModal(staffName);showToast('Hours updated!');
+  };
+}
+
+async function deleteHoursEntry(entryId,staffName){
+  if(!confirm('Delete this hours entry?'))return;
+  await db.from('time_entries').delete().eq('id',entryId);
+  closeModal('modal-staffhours');await fetchAll();render();openStaffHoursModal(staffName);showToast('Hours entry deleted.');
+}
+
+async function saveEditedBidRole(bidId,eventId){
+  var role=(document.getElementById('ebr-role')||{}).value;
+  if(!role){showToast('Please select a role.',false);return;}
+  await db.from('bids').update({role:role}).eq('id',bidId);
+  closeModal('modal-edit-bid-role');await fetchAll();await recheckEventStatus(eventId);await fetchAll();
+  closeModal('modal-bids');openBidsModal(eventId);render();showToast('Role updated!');
+}
+
+async function saveNewStaff(){
+  var name=(document.getElementById('sa-name')||{}).value;if(name)name=name.trim();
+  var email=(document.getElementById('sa-email')||{}).value;if(email)email=email.trim();
+  var role=(document.getElementById('sa-role')||{}).value;
+  if(!name||!email){showToast('Name and email required.',false);return;}
+  var res=await db.from('staff_directory').insert({name:name,email:email,role:role||null,active:true});
+  if(res.error){showToast(res.error.code==='23505'?'Email already in directory.':'Error adding staff.',false);return;}
+  closeModal('modal-add-staff');await fetchAll();render();showToast(name+' added!');
+}
+
+async function saveEditedStaff(staffId){
+  var name=(document.getElementById('se-name')||{}).value;if(name)name=name.trim();
+  var email=(document.getElementById('se-email')||{}).value;if(email)email=email.trim();
+  var role=(document.getElementById('se-role')||{}).value;
+  if(!name||!email){showToast('Name and email required.',false);return;}
+  await db.from('staff_directory').update({name:name,email:email,role:role||null}).eq('id',staffId);
+  closeModal('modal-edit-staff');await fetchAll();render();showToast('Staff updated!');
+}
+
+async function removeStaff(staffId,name){
+  if(!confirm('Remove '+name+' from the directory?'))return;
+  await db.from('staff_directory').update({active:false}).eq('id',staffId);
+  await fetchAll();render();showToast(name+' removed.');
+}
+
+async function sendNewEventNotifications(ev){
+  var staff=state.staffDirectory||[];if(!staff.length)return;
+  var det=(ev.type?'Type: '+ev.type+'\n':'')+'Date: '+ev.date+(ev.start_time?' at '+ev.start_time+(ev.end_time?' - '+ev.end_time:''):'')+'\n'+(ev.location?'Venue: '+ev.location+'\n':'')+(ev.guests?'Guests: ~'+ev.guests+'\n':'')+(ev.servers_needed>0?'Servers needed: '+ev.servers_needed+'\n':'')+(ev.bartenders_needed>0?'Bartenders needed: '+ev.bartenders_needed+'\n':'')+(ev.chefs_needed>0?'Chefs needed: '+ev.chefs_needed+'\n':'')+(ev.notes?'Notes: '+ev.notes+'\n':'');
+  var sent=0;
+  for(var i=0;i<staff.length;i++){
+    var s=staff[i];
+    var body='Hi '+s.name+', a new event has been posted.\n\nEvent: '+ev.name+'\n'+det+'\nLog in to place your bid.\n\n— The Shaken & Stirred Team';
+    var ok=await sendEmail(s.email,s.name,'New event: '+ev.name,body);
+    if(ok)sent++;
+  }
+  showToast(sent>0?'Event posted! Notified '+sent+' staff.':'Event posted — email notifications failed.',sent>0);
+}
+
+async function sendFullyStaffedEmails(eventId){
+  var ev=state.events.find(function(e){return e.id===eventId;});if(!ev)return;
+  var bidders=state.bids.filter(function(b){return b.event_id===eventId&&b.staff_email;});
+  for(var i=0;i<bidders.length;i++){
+    var b=bidders[i];
+    await sendEmail(b.staff_email,b.staff_name,'Update: '+ev.name+' is now fully staffed','Hi '+b.staff_name+', '+ev.name+' ('+ev.date+') is now fully staffed. Thank you for your interest! — The Shaken & Stirred Team');
+  }
+}
+
+function togglePastEvents(){state.adminShowPast=!state.adminShowPast;render();}
+async function clearPastEvents(){
+  var today=new Date();today.setHours(0,0,0,0);
+  var past=state.events.filter(function(e){return e.date&&new Date(e.date+'T00:00:00')<today;});
+  if(!past.length){showToast('No past events.',false);return;}
+  if(!confirm('Delete all '+past.length+' past event(s)?'))return;
+  await db.from('events').delete().in('id',past.map(function(e){return e.id;}));
+  state.adminShowPast=false;await fetchAll();render();showToast(past.length+' past event(s) deleted.');
+}
+
+var reviewRatings={overall_rating:0,food_quality:0,staff_performance:0,client_satisfaction:0};
+function rateReview(field,val){
+  reviewRatings[field]=val;
+  var starsEl=document.getElementById('stars-'+field);
+  if(starsEl)starsEl.querySelectorAll('.rstar').forEach(function(s){s.classList.toggle('active',parseInt(s.dataset.val)<=val);});
+  var vals=Object.values(reviewRatings).filter(function(v){return v>0;});
+  var el=document.getElementById('r-avg-display');
+  if(el)el.textContent=vals.length?(vals.reduce(function(a,b){return a+b;},0)/vals.length).toFixed(1):'—';
+  var nf=document.getElementById('rnotes-'+field);
+  if(nf&&nf.style.display==='none')toggleReviewNotes(field);
+}
+function toggleReviewNotes(field){
+  var el=document.getElementById('rnotes-'+field);if(!el)return;
+  var open=el.style.display!=='none';
+  el.style.display=open?'none':'block';
+  if(!open){setTimeout(function(){var ta=el.querySelector('textarea');if(ta)ta.focus();},50);}
+}
+async function submitReview(eventId,existingId){
+  var reviewer=(document.getElementById('r-reviewer')||{}).value;if(reviewer)reviewer=reviewer.trim();
+  var payload={event_id:eventId,reviewer_name:reviewer||'Admin',
+    overall_rating:reviewRatings.overall_rating||null,food_quality:reviewRatings.food_quality||null,
+    staff_performance:reviewRatings.staff_performance||null,client_satisfaction:reviewRatings.client_satisfaction||null,
+    overall_notes:(document.getElementById('rtxt-overall_rating')||{}).value||null,
+    food_notes:(document.getElementById('rtxt-food_quality')||{}).value||null,
+    staff_notes:(document.getElementById('rtxt-staff_performance')||{}).value||null,
+    client_notes:(document.getElementById('rtxt-client_satisfaction')||{}).value||null,
+    issues:(document.getElementById('r-issues')||{}).value||null,
+    general_notes:(document.getElementById('r-notes')||{}).value||null
+  };
+  var res=existingId?await db.from('event_reviews').update(payload).eq('id',existingId):await db.from('event_reviews').insert(payload);
+  if(res.error){showToast('Error saving review.',false);return;}
+  await fetchAll();
+  var ev=state.events.find(function(e){return e.id===eventId;});
+  if(ev){
+    function rl(label,rating,notes){return label+': '+(rating?rating+'/5':'Not rated')+(notes?'\nNotes: '+notes:'');}
+    var body='Post-event review for '+ev.name+' ('+ev.date+') by '+(reviewer||'Admin')+'.\n\nRATINGS\n'+rl('Overall',payload.overall_rating,payload.overall_notes)+'\n'+rl('Food',payload.food_quality,payload.food_notes)+'\n'+rl('Staff',payload.staff_performance,payload.staff_notes)+'\n'+rl('Client',payload.client_satisfaction,payload.client_notes)+(payload.issues?'\n\nISSUES\n'+payload.issues:'')+(payload.general_notes?'\n\nNOTES\n'+payload.general_notes:'');
+    for(var i=0;i<REVIEW_EMAILS.length;i++){await sendEmail(REVIEW_EMAILS[i].email,REVIEW_EMAILS[i].name,'Post-event review: '+ev.name+' ('+ev.date+')',body);}
+  }
+  state.reviewingEventId=null;reviewRatings={overall_rating:0,food_quality:0,staff_performance:0,client_satisfaction:0};
+  render();showToast(existingId?'Review updated!':'Review submitted!');
+}
+async function deleteReview(reviewId){
+  if(!confirm('Delete this review?'))return;
+  await db.from('event_reviews').delete().eq('id',reviewId);
+  await fetchAll();render();showToast('Review deleted.');
+}
+
 function getPayPeriod(ts){
   var anchor=new Date('2026-07-20T00:00:00').getTime();
   var periodMs=14*24*60*60*1000;
@@ -2022,7 +2330,6 @@ function waitForDeps(cb,attempts){
   else{document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-alert-circle" aria-hidden="true"></i>Failed to load required scripts. Please refresh.</div>';}
 }
 
-waitForDeps(init);
-</script>
+waitForDeps(init);</script>
 </body>
 </html>
