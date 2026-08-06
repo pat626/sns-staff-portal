@@ -1955,6 +1955,74 @@ function exportHours(){
   a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';
   a.click();
   showToast('Payroll export downloaded!');
-};</script>
+};
+function getPayPeriod(ts){
+  var anchor=new Date('2026-07-20T00:00:00').getTime();
+  var period=14*24*60*60*1000;
+  var diff=ts-anchor;
+  var num=Math.floor(diff/period);
+  var start=anchor+num*period;
+  var end=start+period;
+  return {num:num,start:start,end:end};
+}
+function fmtPayPeriod(pp){
+  var s=new Date(pp.start);var e=new Date(pp.end-1);
+  var opts={month:'short',day:'numeric',year:'numeric'};
+  return s.toLocaleDateString([],opts)+' – '+e.toLocaleDateString([],opts);
+}
+
+async function saveSettings(){
+  state.ejsServiceId=(document.getElementById('s-sid')||{}).value;if(state.ejsServiceId)state.ejsServiceId=state.ejsServiceId.trim();
+  state.ejsTemplateId=(document.getElementById('s-tid')||{}).value;if(state.ejsTemplateId)state.ejsTemplateId=state.ejsTemplateId.trim();
+  state.ejsPublicKey=(document.getElementById('s-pk')||{}).value;if(state.ejsPublicKey)state.ejsPublicKey=state.ejsPublicKey.trim();
+  saveEjs();closeModal('modal-settings');showToast('Settings saved.');
+}
+async function testEmail(){
+  if(!state.employeeEmail){showToast('Log in as staff first to test.',false);return;}
+  var ok=await sendEmail(state.employeeEmail,state.employeeName,'SNS Portal test','EmailJS is configured correctly!');
+  showToast(ok?'Test email sent!':'Test failed — check your IDs.',ok);
+}
+
+function closeModal(id){var m=document.getElementById(id);if(m)m.remove();}
+
+function openSettings(){
+  var m=document.createElement('div');m.className='modal-bg';m.id='modal-settings';
+  var h='<div class="modal"><div class="modal-title">Email Settings <button class="btn btn-sm sns-close-modal" data-modal="modal-settings"><i class="ti ti-x" aria-hidden="true"></i></button></div>';
+  h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Set up at emailjs.com. Template variables: to_email, to_name, subject, message.</div></div>';
+  h+='<div class="form-group"><label class="form-label">Public key</label><input type="text" id="s-pk" value="'+esc(state.ejsPublicKey)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Service ID</label><input type="text" id="s-sid" value="'+esc(state.ejsServiceId)+'"></div>';
+  h+='<div class="form-group"><label class="form-label">Template ID</label><input type="text" id="s-tid" value="'+esc(state.ejsTemplateId)+'"></div>';
+  h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-settings">Cancel</button><button class="btn btn-sm sns-test-email"><i class="ti ti-send" aria-hidden="true"></i> Test</button><button class="btn btn-gold sns-save-settings">Save</button></div></div>';
+  m.innerHTML=h;document.body.appendChild(m);
+  m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});
+  m.querySelector('.sns-test-email').onclick=function(){testEmail();};
+  m.querySelector('.sns-save-settings').onclick=function(){saveSettings();};
+}
+
+async function init(){
+  document.getElementById('main-content').innerHTML='<div class="loading"><i class="ti ti-loader" aria-hidden="true"></i> Connecting…</div>';
+  try{
+    loadLocal();
+    var session=await db.auth.getSession();
+    if(session.data&&session.data.session){
+      state.adminLoggedIn=true;state.adminSession=session.data.session;
+      document.getElementById('settings-btn').style.display='';
+    }
+    await fetchAll();render();
+  }catch(err){
+    console.error('Init error',err);
+    document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-wifi-off" aria-hidden="true"></i>Could not connect.<br><br><button class="btn btn-gold" onclick="init()">Try again</button></div>';
+  }
+}
+
+function waitForDeps(cb,attempts){
+  if(attempts===undefined)attempts=0;
+  if(typeof supabase!=='undefined'&&typeof emailjs!=='undefined'){cb();}
+  else if(attempts<50){setTimeout(function(){waitForDeps(cb,attempts+1);},100);}
+  else{document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-alert-circle" aria-hidden="true"></i>Failed to load required scripts. Please refresh.</div>';}
+}
+
+waitForDeps(init);
+</script>
 </body>
 </html>
