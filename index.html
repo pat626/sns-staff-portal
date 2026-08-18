@@ -77,7 +77,23 @@ db.from('management_schedule').select('*').order('date',{ascending:true}),
 db.from('managers').select('*').order('name',{ascending:true})
 ]);state.events=r[0].data||[];state.bids=r[1].data||[];state.timeclockEntries=r[2].data||[];state.timeEntries=state.timeclockEntries.filter(function(t){return t.event_id;});state.shiftRequests=r[3].data||[];state.staffDirectory=(r[4].data||[]).filter(function(s){return s.active;});state.eventReviews=r[5].data||[];state.announcements=r[6].data||[];state.mgmtSchedule=r[7].data||[];state.managers=(r[8].data||[]).filter(function(m){return m.active;});}catch(e){console.error('fetchAll error',e);}}
 async function adminLogin(){var email=document.getElementById('al-user').value.trim();var pass=document.getElementById('al-pass').value;document.getElementById('al-error').textContent='';var res=await db.auth.signInWithPassword({email:email,password:pass});if(res.error){document.getElementById('al-error').textContent='Incorrect username or password.';return;}
-state.adminLoggedIn=true;state.adminSession=res.data.session;document.getElementById('settings-btn').style.display='';await fetchAll();render();}
+state.adminLoggedIn=true;state.adminSession=res.data.session;document.getElementById('settings-btn').style.display='';await fetchAll();
+    // Handle confirmation link
+    var urlParams=new URLSearchParams(window.location.search);
+    var confirmBid=urlParams.get('confirm');
+    if(confirmBid){
+      var res=await db.from('bids').update({confirmed:true}).eq('id',confirmBid);
+      if(!res.error){
+        var bid=(state.bids||[]).find(function(b){return b.id===confirmBid;});
+        var ev=bid?state.events.find(function(e){return e.id===bid.event_id;}):null;
+        showToast('Attendance confirmed'+(ev?' for '+ev.name:'')+'!');
+        await sendEmail(ADMIN_EMAIL,'Pat',(bid?bid.staff_name:'Staff')+' confirmed: '+(ev?ev.name:'event'),(bid?bid.staff_name:'A staff member')+' confirmed their attendance'+(ev?' for '+ev.name+' on '+fmtDate(ev.date):'')+'.'); 
+        // Remove param from URL without reload
+        window.history.replaceState({},'',window.location.pathname);
+        await fetchAll();
+      }
+    }
+    render();}
 async function adminLogout(){await db.auth.signOut();state.adminLoggedIn=false;state.adminSession=null;document.getElementById('settings-btn').style.display='none';if(state.view==='timeclock'||state.view==='admin')state.view='employee';render();}
 function switchView(v){state.view=v;render();}
 function setAdminTab(t){state.adminTab=t;render();}
@@ -224,14 +240,46 @@ var attachUrl=null;var attachType=null;var annFile=document.getElementById('ann-
 var afUrl=db.storage.from('event-documents').getPublicUrl(afPath);attachUrl=afUrl.data&&afUrl.data.publicUrl?afUrl.data.publicUrl:null;attachType=af.type.startsWith('image/')?'image':'pdf';}
 var targetStr=allChecked?null:targets.join(',');await db.from('announcements').insert({title:title,body:body,target_email:targetStr,attachment_url:attachUrl,attachment_type:attachType});closeModal('modal-announcement');await fetchAll();render();showToast('Announcement posted!');};}
 async function deleteAnnouncement(id){if(!confirm('Delete this announcement?'))return;await db.from('announcements').delete().eq('id',id);await fetchAll();render();showToast('Deleted.');}
-async function deleteEvent(id){if(!confirm('Delete this event and all its data?'))return;await db.from('events').delete().eq('id',id);await fetchAll();render();}
-async function toggleStatus(id,current){var ns=(!current||current==='open')?'closed':'open';await db.from('events').update({status:ns}).eq('id',id);await fetchAll();render();}
+async function deleteEvent(id){if(!confirm('Delete this event and all its data?'))return;await db.from('events').delete().eq('id',id);await fetchAll();
+    // Handle confirmation link
+    var urlParams=new URLSearchParams(window.location.search);
+    var confirmBid=urlParams.get('confirm');
+    if(confirmBid){
+      var res=await db.from('bids').update({confirmed:true}).eq('id',confirmBid);
+      if(!res.error){
+        var bid=(state.bids||[]).find(function(b){return b.id===confirmBid;});
+        var ev=bid?state.events.find(function(e){return e.id===bid.event_id;}):null;
+        showToast('Attendance confirmed'+(ev?' for '+ev.name:'')+'!');
+        await sendEmail(ADMIN_EMAIL,'Pat',(bid?bid.staff_name:'Staff')+' confirmed: '+(ev?ev.name:'event'),(bid?bid.staff_name:'A staff member')+' confirmed their attendance'+(ev?' for '+ev.name+' on '+fmtDate(ev.date):'')+'.'); 
+        // Remove param from URL without reload
+        window.history.replaceState({},'',window.location.pathname);
+        await fetchAll();
+      }
+    }
+    render();}
+async function toggleStatus(id,current){var ns=(!current||current==='open')?'closed':'open';await db.from('events').update({status:ns}).eq('id',id);await fetchAll();
+    // Handle confirmation link
+    var urlParams=new URLSearchParams(window.location.search);
+    var confirmBid=urlParams.get('confirm');
+    if(confirmBid){
+      var res=await db.from('bids').update({confirmed:true}).eq('id',confirmBid);
+      if(!res.error){
+        var bid=(state.bids||[]).find(function(b){return b.id===confirmBid;});
+        var ev=bid?state.events.find(function(e){return e.id===bid.event_id;}):null;
+        showToast('Attendance confirmed'+(ev?' for '+ev.name:'')+'!');
+        await sendEmail(ADMIN_EMAIL,'Pat',(bid?bid.staff_name:'Staff')+' confirmed: '+(ev?ev.name:'event'),(bid?bid.staff_name:'A staff member')+' confirmed their attendance'+(ev?' for '+ev.name+' on '+fmtDate(ev.date):'')+'.'); 
+        // Remove param from URL without reload
+        window.history.replaceState({},'',window.location.pathname);
+        await fetchAll();
+      }
+    }
+    render();}
 async function recheckEventStatus(eventId){var e=state.events.find(function(ev){return ev.id===eventId;});if(!e)return;var sf=state.bids.filter(function(b){return b.event_id===eventId&&b.role==='Server'&&b.selected;}).length;var bf=state.bids.filter(function(b){return b.event_id===eventId&&b.role==='Bartender'&&b.selected;}).length;var cf=state.bids.filter(function(b){return b.event_id===eventId&&b.role==='Chef'&&b.selected;}).length;var allFilled=sf>=(e.servers_needed||0)&&bf>=(e.bartenders_needed||0)&&cf>=(e.chefs_needed||0);var total=state.bids.filter(function(b){return b.event_id===eventId&&b.selected;}).length;var ns=allFilled&&total>0?'filled':e.status==='filled'?'open':e.status;if(ns!==e.status)await db.from('events').update({status:ns}).eq('id',eventId);}
 async function manualRecheckStatus(eventId){await fetchAll();await recheckEventStatus(eventId);await fetchAll();render();showToast('Status updated!');}
 async function resendEventNotification(eventId){var ev=state.events.find(function(e){return e.id===eventId;});if(!ev)return;var staff=state.staffDirectory||[];if(!staff.length){showToast('No staff in directory.',false);return;}
 if(!confirm('Resend to all '+staff.length+' staff for "'+ev.name+'"?'))return;await sendNewEventNotifications(ev);}
 async function selectBid(bidId,eventId,role,needs){var b=state.bids.find(function(b){return b.id===bidId;});var selected=state.bids.filter(function(b){return b.event_id===eventId&&b.role===role&&b.selected;}).length;if(selected>=needs&&!b.selected){if(!confirm(needs+' '+role+'(s) already filled. Pick anyway?'))return;}
-await db.from('bids').update({selected:true}).eq('id',bidId);await fetchAll();await recheckEventStatus(eventId);await fetchAll();var ev2=state.events.find(function(ev){return ev.id===eventId;});if(ev2&&ev2.status==='filled')await sendFullyStaffedEmails(eventId);closeModal('modal-bids');openBidsModal(eventId);render();var bid=state.bids.find(function(b){return b.id===bidId;});if(bid&&bid.staff_email){var ev3=state.events.find(function(ev){return ev.id===eventId;});var confirmUrl='https://fxiufkfxbtjupmfdtboh.supabase.co/functions/v1/confirm-attendance?bid='+bid.id;var body='Hi '+bid.staff_name+', you have been selected to work '+ev3.name+' on '+fmtDate(ev3.date)+(ev3.start_time?' at '+fmtTime(ev3.start_time):'')+'. '+(ev3.location?'Venue: '+ev3.location+'. ':'')+'\n\nPlease confirm your attendance by clicking the link below:\n'+confirmUrl+'\n\nOnce confirmed, please clock in through the staff portal when you arrive. — The Shaken & Stirred Team';var sent=await sendEmail(bid.staff_email,bid.staff_name,'You are on the schedule: '+ev3.name,body);showToast(sent?'Confirmation sent to '+bid.staff_name+'!':bid.staff_name+' selected — email failed.',sent);}else showToast((bid?bid.staff_name:'Staff')+' added to schedule.');}
+await db.from('bids').update({selected:true}).eq('id',bidId);await fetchAll();await recheckEventStatus(eventId);await fetchAll();var ev2=state.events.find(function(ev){return ev.id===eventId;});if(ev2&&ev2.status==='filled')await sendFullyStaffedEmails(eventId);closeModal('modal-bids');openBidsModal(eventId);render();var bid=state.bids.find(function(b){return b.id===bidId;});if(bid&&bid.staff_email){var ev3=state.events.find(function(ev){return ev.id===eventId;});var confirmUrl='https://pat626.github.io/sns-staff-portal/?confirm='+bid.id;var body='Hi '+bid.staff_name+', you have been selected to work '+ev3.name+' on '+fmtDate(ev3.date)+(ev3.start_time?' at '+fmtTime(ev3.start_time):'')+'. '+(ev3.location?'Venue: '+ev3.location+'. ':'')+'\n\nPlease confirm your attendance by clicking the link below:\n'+confirmUrl+'\n\nOnce confirmed, please clock in through the staff portal when you arrive. — The Shaken & Stirred Team';var sent=await sendEmail(bid.staff_email,bid.staff_name,'You are on the schedule: '+ev3.name,body);showToast(sent?'Confirmation sent to '+bid.staff_name+'!':bid.staff_name+' selected — email failed.',sent);}else showToast((bid?bid.staff_name:'Staff')+' added to schedule.');}
 async function deselectBid(bidId,eventId){var e=state.events.find(function(ev){return ev.id===eventId;});await db.from('bids').update({selected:false}).eq('id',bidId);if(e&&e.status==='filled')await db.from('events').update({status:'open'}).eq('id',eventId);await fetchAll();closeModal('modal-bids');openBidsModal(eventId);render();}
 async function placeBid(eventId){var role=(document.getElementById('b-role')||{}).value;var note=(document.getElementById('b-note')||{}).value;if(note)note=note.trim();if(!role){showToast('Please select a role.',false);return;}
 var already=state.bids.find(function(b){return b.event_id===eventId&&b.staff_name===state.employeeName;});if(already){showToast('You already have a bid on this event.',false);return;}
@@ -344,7 +392,23 @@ var ok=await sendEmail(state.employeeEmail,state.employeeName,'SNS Portal test',
 function closeModal(id){var m=document.getElementById(id);if(m)m.remove();}
 function openSettings(){var m=document.createElement('div');m.className='modal-bg';m.id='modal-settings';var h='<div class="modal"><div class="modal-title">Email Settings <button class="btn btn-sm sns-close-modal" data-modal="modal-settings"><i class="ti ti-x" aria-hidden="true"></i></button></div>';h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Set up at emailjs.com. Template variables: to_email, to_name, subject, message.</div></div>'+'<div class="form-group"><label class="form-label">Public key</label><input type="text" id="s-pk" value="'+esc(state.ejsPublicKey)+'"></div>';h+='<div class="form-group"><label class="form-label">Service ID</label><input type="text" id="s-sid" value="'+esc(state.ejsServiceId)+'"></div>';h+='<div class="form-group"><label class="form-label">Template ID</label><input type="text" id="s-tid" value="'+esc(state.ejsTemplateId)+'"></div>';h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-settings">Cancel</button><button class="btn btn-sm sns-test-email"><i class="ti ti-send" aria-hidden="true"></i> Test</button><button class="btn btn-gold sns-save-settings">Save</button></div></div>';m.innerHTML=h;document.body.appendChild(m);m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});m.querySelector('.sns-test-email').onclick=function(){testEmail();};m.querySelector('.sns-save-settings').onclick=function(){saveSettings();};}
 async function init(){document.getElementById('main-content').innerHTML='<div class="loading"><i class="ti ti-loader" aria-hidden="true"></i> Connecting…</div>';try{loadLocal();var session=await db.auth.getSession();if(session.data&&session.data.session){state.adminLoggedIn=true;state.adminSession=session.data.session;document.getElementById('settings-btn').style.display='';}
-await fetchAll();render();}catch(err){console.error('Init error',err);document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-wifi-off" aria-hidden="true"></i>Could not connect.<br><br><button class="btn btn-gold" onclick="init()">Try again</button></div>';}}
+await fetchAll();
+    // Handle confirmation link
+    var urlParams=new URLSearchParams(window.location.search);
+    var confirmBid=urlParams.get('confirm');
+    if(confirmBid){
+      var res=await db.from('bids').update({confirmed:true}).eq('id',confirmBid);
+      if(!res.error){
+        var bid=(state.bids||[]).find(function(b){return b.id===confirmBid;});
+        var ev=bid?state.events.find(function(e){return e.id===bid.event_id;}):null;
+        showToast('Attendance confirmed'+(ev?' for '+ev.name:'')+'!');
+        await sendEmail(ADMIN_EMAIL,'Pat',(bid?bid.staff_name:'Staff')+' confirmed: '+(ev?ev.name:'event'),(bid?bid.staff_name:'A staff member')+' confirmed their attendance'+(ev?' for '+ev.name+' on '+fmtDate(ev.date):'')+'.'); 
+        // Remove param from URL without reload
+        window.history.replaceState({},'',window.location.pathname);
+        await fetchAll();
+      }
+    }
+    render();}catch(err){console.error('Init error',err);document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-wifi-off" aria-hidden="true"></i>Could not connect.<br><br><button class="btn btn-gold" onclick="init()">Try again</button></div>';}}
 function waitForDeps(cb,attempts){if(attempts===undefined)attempts=0;if(typeof supabase!=='undefined'&&typeof emailjs!=='undefined'){cb();}
 else if(attempts<50){setTimeout(function(){waitForDeps(cb,attempts+1);},100);}
 else{document.getElementById('main-content').innerHTML='<div class="empty"><i class="ti ti-alert-circle" aria-hidden="true"></i>Failed to load required scripts. Please refresh.</div>';}}
