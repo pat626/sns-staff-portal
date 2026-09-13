@@ -111,10 +111,20 @@ function fmtWeekLabel(monday){var sunday=new Date(monday);sunday.setDate(sunday.
 function buildSVGLogo(w,h){return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M8 3h12l-2 7H10L8 3z" stroke="#c9a84c" stroke-width="1.2" stroke-linejoin="round" fill="none"/><path d="M10 10l4 12 4-12" stroke="#c9a84c" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 3h14" stroke="#c9a84c" stroke-width="1.2" stroke-linecap="round"/><circle cx="14" cy="22" r="1.5" fill="#c9a84c" opacity=".6"/></svg>';}
 function statusBadge(e){if(e.status==='filled')return '<span class="badge badge-filled"><i class="ti ti-check" aria-hidden="true"></i>Filled</span>';if(e.status==='closed')return '<span class="badge badge-closed">Closed</span>';return '<span class="badge badge-open"><i class="ti ti-circle-dot" aria-hidden="true"></i>Open</span>';}
 function roleBadge(role){if(!role)return '';var r=role.toLowerCase();var cls=r==='server'?'role-server':r==='bartender'?'role-bartender':r==='delivery driver'?'role-delivery':'role-chef';return '<span class="bid-role-tag '+cls+'">'+esc(role)+'</span>';}
-function rolePills(e){var pills=[];if(e.servers_needed>0){var p=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Server'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-bowl-spoon" aria-hidden="true"></i> Servers '+p+'/'+e.servers_needed+'</span>');}
-if(e.bartenders_needed>0){var p2=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Bartender'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-glass" aria-hidden="true"></i> Bartenders '+p2+'/'+e.bartenders_needed+'</span>');}
-if(e.chefs_needed>0){var p3=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Chef'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-chef-hat" aria-hidden="true"></i> Chefs '+p3+'/'+e.chefs_needed+'</span>');}
-return pills.length?'<div class="role-pills">'+pills.join('')+'</div>':'';}
+function rolePills(e){
+var pills=[];
+var eShiftsPills=(state.eventShifts||[]).filter(function(s){return s.event_id===e.id;});
+var svrNeeded,brtNeeded,chfNeeded;
+if(eShiftsPills.length){
+svrNeeded=eShiftsPills.reduce(function(t,s){return t+(s.servers_needed||0);},0);
+brtNeeded=eShiftsPills.reduce(function(t,s){return t+(s.bartenders_needed||0);},0);
+chfNeeded=eShiftsPills.reduce(function(t,s){return t+(s.chefs_needed||0);},0);
+}else{
+svrNeeded=e.servers_needed||0;brtNeeded=e.bartenders_needed||0;chfNeeded=e.chefs_needed||0;}
+if(svrNeeded>0){var sp=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Server'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-bowl-spoon" aria-hidden="true"></i> Servers '+sp+'/'+svrNeeded+'</span>');}
+if(brtNeeded>0){var bp=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Bartender'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-glass" aria-hidden="true"></i> Bartenders '+bp+'/'+brtNeeded+'</span>');}
+if(chfNeeded>0){var cp=state.bids.filter(function(b){return b.event_id===e.id&&b.role==='Chef'&&b.selected;}).length;pills.push('<span class="role-pill"><i class="ti ti-chef-hat" aria-hidden="true"></i> Chefs '+cp+'/'+chfNeeded+'</span>');}
+return pills.join(' ');}
 function filterBar(){var opts=[['upcoming','Upcoming'],['today','Today'],['week','This week'],['past','Past'],['all','All']];var btns=opts.map(function(o){return '<button class="filter-btn'+(state.dateFilter===o[0]?' active':'')+' sns-filter" data-f="'+o[0]+'">'+o[1]+'</button>';}).join('');return '<div class="filter-bar"><i class="ti ti-filter" aria-hidden="true" style="color:var(--ss-muted);font-size:13px"></i>'+btns+'</div>';}
 function eventMetaHTML(e){var h='<div class="event-meta">';h+='<div class="event-meta-row"><i class="ti ti-calendar" aria-hidden="true"></i>'+fmtDate(e.date)+'</div>';if(e.arrival_time)h+='<div class="event-meta-row"><i class="ti ti-clock" aria-hidden="true"></i><span style="color:var(--ss-gold)">Staff arrival:</span> '+fmtTime(e.arrival_time)+'</div>';if(e.start_time)h+='<div class="event-meta-row"><i class="ti ti-player-play" aria-hidden="true"></i><span style="color:var(--ss-muted)">Event:</span> '+fmtTime(e.start_time)+(e.end_time?' &ndash; '+fmtTime(e.end_time):'')+'</div>';if(e.address)h+='<div class="event-meta-row"><i class="ti ti-map-2" aria-hidden="true"></i>'+esc(e.address)+'</div>';if(e.location)h+='<div class="event-meta-row"><i class="ti ti-map-pin" aria-hidden="true"></i>'+esc(e.location)+'</div>';if(e.guests)h+='<div class="event-meta-row"><i class="ti ti-users" aria-hidden="true"></i>~'+esc(e.guests)+' guests</div>';if(e.notes)h+='<div class="event-meta-row"><i class="ti ti-notes" aria-hidden="true"></i>'+esc(e.notes)+'</div>';h+='</div>';return h;}
 function render(){document.getElementById('btn-admin').classList.toggle('active',state.view==='admin');document.getElementById('btn-employee').classList.toggle('active',state.view==='employee');document.getElementById('btn-timeclock').classList.toggle('active',state.view==='timeclock');document.getElementById('btn-timeclock').style.display=state.adminLoggedIn?'':'none';var mc=document.getElementById('main-content');if(state.view==='admin')mc.innerHTML=renderAdmin();else if(state.view==='timeclock'&&state.adminLoggedIn)mc.innerHTML=renderTimeclock();else if(state.view==='timeclock'){state.view='employee';mc.innerHTML=renderEmployee();}
@@ -295,7 +305,18 @@ async function recheckEventStatus(eventId){var e=state.events.find(function(ev){
 async function manualRecheckStatus(eventId){await fetchAll();await recheckEventStatus(eventId);await fetchAll();render();showToast('Status updated!');}
 async function resendEventNotification(eventId){var ev=state.events.find(function(e){return e.id===eventId;});if(!ev)return;var staff=state.staffDirectory||[];if(!staff.length){showToast('No staff in directory.',false);return;}
 if(!confirm('Resend to all '+staff.length+' staff for "'+ev.name+'"?'))return;await sendNewEventNotifications(ev);}
-async function selectBid(bidId,eventId,role,needs){var b=state.bids.find(function(b){return b.id===bidId;});var selected=state.bids.filter(function(b){return b.event_id===eventId&&b.role===role&&b.selected;}).length;if(selected>=needs&&!b.selected){if(!confirm(needs+' '+role+'(s) already filled. Pick anyway?'))return;}
+async function selectBid(bidId,eventId,role,needs){
+var b=state.bids.find(function(b){return b.id===bidId;});
+var eShiftsSel=(state.eventShifts||[]).filter(function(s){return s.event_id===eventId;});
+var totalNeeded=needs;
+if(eShiftsSel.length){
+totalNeeded=eShiftsSel.reduce(function(t,s){
+if(role==='Server')return t+(s.servers_needed||0);
+if(role==='Bartender')return t+(s.bartenders_needed||0);
+if(role==='Chef')return t+(s.chefs_needed||0);
+return t;},0);}
+var selected=state.bids.filter(function(b){return b.event_id===eventId&&b.role===role&&b.selected;}).length;
+if(selected>=totalNeeded&&!b.selected){if(!confirm(totalNeeded+' '+role+'(s) already filled. Pick anyway?'))return;}
 await db.from('bids').update({selected:true}).eq('id',bidId);await fetchAll();await recheckEventStatus(eventId);await fetchAll();var ev2=state.events.find(function(ev){return ev.id===eventId;});if(ev2&&ev2.status==='filled')await sendFullyStaffedEmails(eventId);closeModal('modal-bids');openBidsModal(eventId);render();var bid=state.bids.find(function(b){return b.id===bidId;});if(bid&&bid.staff_email){var ev3=state.events.find(function(ev){return ev.id===eventId;});var confirmUrl='https://pat626.github.io/sns-staff-portal/?confirm='+bid.id;var body='Hi '+bid.staff_name+', you have been selected to work '+ev3.name+' on '+fmtDate(ev3.date)+(ev3.start_time?' at '+fmtTime(ev3.start_time):'')+'. '+(ev3.location?'Venue: '+ev3.location+'. ':'')+'\n\nPlease confirm your attendance by clicking the link below:\n'+confirmUrl+'\n\nOnce confirmed, please clock in through the staff portal when you arrive. — The Shaken & Stirred Team';var sent=await sendEmail(bid.staff_email,bid.staff_name,'You are on the schedule: '+ev3.name,body);showToast(sent?'Confirmation sent to '+bid.staff_name+'!':bid.staff_name+' selected — email failed.',sent);}else showToast((bid?bid.staff_name:'Staff')+' added to schedule.');}
 async function deselectBid(bidId,eventId){var e=state.events.find(function(ev){return ev.id===eventId;});await db.from('bids').update({selected:false}).eq('id',bidId);if(e&&e.status==='filled')await db.from('events').update({status:'open'}).eq('id',eventId);await fetchAll();closeModal('modal-bids');openBidsModal(eventId);render();}
 async function placeBid(eventId){var role=(document.getElementById('b-role')||{}).value;var note=(document.getElementById('b-note')||{}).value;if(note)note=note.trim();if(!role){showToast('Please select a role.',false);return;}
@@ -394,7 +415,7 @@ if(b.selected)bc+='<div class="my-shift-note"><i class="ti ti-star" aria-hidden=
 bc+='</div><div style="display:flex;gap:5px;flex-shrink:0">';
 bc+='<button class="btn btn-sm sns-edit-bid-role" data-bid="'+b.id+'" data-name="'+esc(b.staff_name)+'" data-role="'+esc(b.role||'')+'" data-eid="'+eventId+'"><i class="ti ti-edit" aria-hidden="true"></i></button>';
 if(b.selected)bc+='<button class="btn btn-sm sns-deselect-bid" data-bid="'+b.id+'" data-eid="'+eventId+'">Remove</button>';
-else bc+='<button class="btn btn-sm btn-success sns-select-bid" data-bid="'+b.id+'" data-eid="'+eventId+'" data-role="'+(b.role||'')+'" data-needs="0"><i class="ti ti-check" aria-hidden="true"></i> Pick</button>';
+var roleNeeded=0;if(eShifts.length){eShifts.forEach(function(sh){if(b.role==='Server')roleNeeded+=sh.servers_needed||0;else if(b.role==='Bartender')roleNeeded+=sh.bartenders_needed||0;else if(b.role==='Chef')roleNeeded+=sh.chefs_needed||0;});}else{if(b.role==='Server')roleNeeded=e.servers_needed||0;else if(b.role==='Bartender')roleNeeded=e.bartenders_needed||0;else if(b.role==='Chef')roleNeeded=e.chefs_needed||0;}bc+='<button class="btn btn-sm btn-success sns-select-bid" data-bid="'+b.id+'" data-eid="'+eventId+'" data-role="'+(b.role||'')+'" data-needs="'+roleNeeded+'"><i class="ti ti-check" aria-hidden="true"></i> Pick</button>';
 bc+='</div></div>';return bc;}
 if(eShifts.length){
 eShifts.forEach(function(sh){
