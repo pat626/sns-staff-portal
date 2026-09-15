@@ -517,7 +517,7 @@ if(!staffMap[staffKey]){staffMap[staffKey]={name:t.staff_name,email:staffEmail,e
 if(isEvent)staffMap[staffKey].eventMs+=ms;else staffMap[staffKey].adminMs+=ms;
 if(ev&&ev.name){if(!eventMap[ev.id]){eventMap[ev.id]={name:ev.name,date:ev.date,totalMs:0,staffCount:0,staff:{},fee:ev.service_fee||0,ppKey:ppKey};}eventMap[ev.id].totalMs+=ms;if(!eventMap[ev.id].staff[staffKey]){eventMap[ev.id].staff[staffKey]=true;eventMap[ev.id].staffCount++;}}});
 ppOrder.sort(function(a,b){return b-a;});
-function s(v){return v===null||v===undefined?'':String(v);}
+function str(v){return v===null||v===undefined?'':String(v);}
 function calcProjected(ev){var proj=0;var eShifts=(state.eventShifts||[]).filter(function(s){return s.event_id===ev.id;});if(eShifts.length){eShifts.forEach(function(sh){if(!sh.start_time||!sh.end_time)return;var p1=sh.start_time.split(':');var p2=sh.end_time.split(':');var hrs=(parseInt(p2[0])*60+parseInt(p2[1])-parseInt(p1[0])*60-parseInt(p1[1]))/60;if(hrs<=0)return;var heads=(sh.servers_needed||0)+(sh.bartenders_needed||0)+(sh.chefs_needed||0);var dPicked=state.bids.some(function(b){return b.event_id===ev.id&&b.shift_id===sh.id&&b.selected&&b.staff_name&&b.staff_name.toLowerCase().indexOf('derek')>=0;});proj+=((dPicked?heads-1:heads)*50*hrs)+(dPicked?300:0);});}else{var arr=ev.arrival_time||ev.start_time;if(arr&&ev.end_time){var p1=arr.split(':');var p2=ev.end_time.split(':');var hrs=(parseInt(p2[0])*60+parseInt(p2[1])-parseInt(p1[0])*60-parseInt(p1[1]))/60;if(hrs>0){var heads=(ev.servers_needed||0)+(ev.bartenders_needed||0)+(ev.chefs_needed||0);var dPicked=state.bids.some(function(b){return b.event_id===ev.id&&b.selected&&b.staff_name&&b.staff_name.toLowerCase().indexOf('derek')>=0;});proj=((dPicked?heads-1:heads)*50*hrs)+(dPicked?300:0);}}}return proj;}
 function calcActual(evId){var labor=0;var derekDone=false;(state.timeclockEntries||[]).filter(function(t){return t.event_id===evId;}).forEach(function(t){var ms=(t.total_ms||0)+(t.clocked_in&&!t.clocked_out?Date.now()-t.clocked_in:0);var hrs=ms/3600000;if(t.staff_name&&t.staff_name.toLowerCase().indexOf('derek')>=0){if(!derekDone){labor+=300;derekDone=true;}}else{labor+=hrs*50;}});return labor;}
 var wb=XLSX.utils.book_new();
@@ -532,19 +532,19 @@ var ws1rows=[
 var grandFee=0;var grandProj=0;var grandAct=0;
 ppOrder.forEach(function(ppKey){
 var pp=ppMap[ppKey];if(!pp)return;
-var eventsThisPP=Object.values(eventMap).filter(function(em){return em.ppKey===ppKey;}).sort(function(a,b){return s(a.date).localeCompare(s(b.date));});
+var eventsThisPP=Object.values(eventMap).filter(function(em){return em.ppKey===ppKey;}).sort(function(a,b){return str(a.date).localeCompare(str(b.date));});
 if(!eventsThisPP.length)return;
 var ppFee=0;var ppProj=0;var ppAct=0;
 eventsThisPP.forEach(function(em){
-var ev=state.events.find(function(e){return s(e.name)===s(em.name)&&s(e.date)===s(em.date);});
+var ev=state.events.find(function(e){return str(e.name)===str(em.name)&&str(e.date)===str(em.date);});
 var evId=Object.keys(eventMap).find(function(k){return eventMap[k]===em;})||'';
 var fee=em.fee||0;var proj=ev?calcProjected(ev):0;var actual=calcActual(evId);
 var variance=fee-actual;
 ppFee+=fee;ppProj+=proj;ppAct+=actual;
-ws1rows.push([s(pp.label),s(em.name),s(em.date),'$'+fee.toLocaleString(),'$'+Math.round(proj).toLocaleString(),'$'+Math.round(actual).toLocaleString(),'$'+Math.abs(Math.round(variance)).toLocaleString()+' '+(variance>=0?'under':'over')]);
+ws1rows.push([str(pp.label),str(em.name),str(em.date),'$'+fee.toLocaleString(),'$'+Math.round(proj).toLocaleString(),'$'+Math.round(actual).toLocaleString(),'$'+Math.abs(Math.round(variance)).toLocaleString()+' '+(variance>=0?'under':'over')]);
 });
 var ppVar=ppFee-ppAct;
-ws1rows.push([s(pp.label)+' TOTAL','','','$'+ppFee.toLocaleString(),'$'+Math.round(ppProj).toLocaleString(),'$'+Math.round(ppAct).toLocaleString(),'$'+Math.abs(Math.round(ppVar)).toLocaleString()+' '+(ppVar>=0?'under':'over')]);
+ws1rows.push([str(pp.label)+' TOTAL','','','$'+ppFee.toLocaleString(),'$'+Math.round(ppProj).toLocaleString(),'$'+Math.round(ppAct).toLocaleString(),'$'+Math.abs(Math.round(ppVar)).toLocaleString()+' '+(ppVar>=0?'under':'over')]);
 ws1rows.push(['','','','','','','']);
 grandFee+=ppFee;grandProj+=ppProj;grandAct+=ppAct;});
 var grandVar=grandFee-grandAct;
@@ -554,24 +554,24 @@ ws1['!cols']=[{wch:24},{wch:28},{wch:11},{wch:14},{wch:15},{wch:14},{wch:16}];
 XLSX.utils.book_append_sheet(wb,'Weekly Summary',ws1);
 // ── Sheet 2: Staff Summary ──
 var ws2rows=[['Employee','Email','Event Hrs','Admin Hrs','Total Hrs']];
-Object.values(staffMap).sort(function(a,b){return s(a.name).localeCompare(s(b.name));}).forEach(function(st){
-ws2rows.push([s(st.name),s(st.email).replace(/^"+|"+$/g,''),(st.eventMs/3600000).toFixed(2),(st.adminMs/3600000).toFixed(2),((st.eventMs+st.adminMs)/3600000).toFixed(2)]);});
+Object.values(staffMap).sort(function(a,b){return str(a.name).localeCompare(str(b.name));}).forEach(function(st){
+ws2rows.push([str(st.name),str(st.email).replace(/^"+|"+$/g,''),(st.eventMs/3600000).toFixed(2),(st.adminMs/3600000).toFixed(2),((st.eventMs+st.adminMs)/3600000).toFixed(2)]);});
 var ws2=XLSX.utils.aoa_to_sheet(ws2rows);
 ws2['!cols']=[{wch:22},{wch:28},{wch:11},{wch:11},{wch:11}];
 XLSX.utils.book_append_sheet(wb,'Staff Summary',ws2);
 // ── Sheet 3: Detailed Payroll ──
 var ws3rows=[['Employee','Email','Role','Type','Event / Note','Date','Event Hrs','Admin Hrs']];
-if(missingClockOut.length){ws3rows.push(['WARNING: MISSING CLOCK-OUTS','','','','','','','']);missingClockOut.forEach(function(m){ws3rows.push([s(m.name),s(m.email),'','',s(m.event),s(m.clockIn),'','']);});ws3rows.push(['','','','','','','','']);}
+if(missingClockOut.length){ws3rows.push(['WARNING: MISSING CLOCK-OUTS','','','','','','','']);missingClockOut.forEach(function(m){ws3rows.push([str(m.name),str(m.email),'','',str(m.event),str(m.clockIn),'','']);});ws3rows.push(['','','','','','','','']);}
 ppOrder.forEach(function(ppKey){var pp=ppMap[ppKey];if(!pp)return;
-ws3rows.push(['--- PAY PERIOD: '+s(pp.label)+' ---','','','','','Event: '+(pp.totalEventMs/3600000).toFixed(2)+'h','Admin: '+(pp.totalAdminMs/3600000).toFixed(2)+'h','']);
-Object.values(pp.staff).sort(function(a,b){return s(a.name).localeCompare(s(b.name));}).forEach(function(st){
-if(!st.eventMs&&!st.adminMs)return;var email=s(st.email).replace(/^"+|"+$/g,'');var firstRow=true;
-st.entries.sort(function(a,b){var da=a.ev?new Date(s(a.ev.date)+'T12:00:00').getTime():(a.entry.clocked_in||0);var db2=b.ev?new Date(s(b.ev.date)+'T12:00:00').getTime():(b.entry.clocked_in||0);return da-db2;});
+ws3rows.push(['--- PAY PERIOD: '+str(pp.label)+' ---','','','','','Event: '+(pp.totalEventMs/3600000).toFixed(2)+'h','Admin: '+(pp.totalAdminMs/3600000).toFixed(2)+'h','']);
+Object.values(pp.staff).sort(function(a,b){return str(a.name).localeCompare(str(b.name));}).forEach(function(st){
+if(!st.eventMs&&!st.adminMs)return;var email=str(st.email).replace(/^"+|"+$/g,'');var firstRow=true;
+st.entries.sort(function(a,b){var da=a.ev?new Date(str(a.ev.date)+'T12:00:00').getTime():(a.entry.clocked_in||0);var db2=b.ev?new Date(str(b.ev.date)+'T12:00:00').getTime():(b.entry.clocked_in||0);return da-db2;});
 st.entries.forEach(function(item){var t=item.entry;
-var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):(item.ev?s(item.ev.date):'');
+var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):(item.ev?str(item.ev.date):'');
 var eventHrs=item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';
 var adminHrs=!item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';
-ws3rows.push([firstRow?s(st.name):'',firstRow?email:'',s(t.role),s(item.type),s(item.label),s(date),s(eventHrs),s(adminHrs)]);
+ws3rows.push([firstRow?str(st.name):'',firstRow?email:'',str(t.role),str(item.type),str(item.label),str(date),str(eventHrs),str(adminHrs)]);
 firstRow=false;});
 if(st.entries.length>1)ws3rows.push(['','','','','','TOTAL',(st.eventMs/3600000).toFixed(2)+'h evt',(st.adminMs/3600000).toFixed(2)+'h adm']);});});
 var ws3=XLSX.utils.aoa_to_sheet(ws3rows);
@@ -621,8 +621,8 @@ ws1['!cols']=[{wch:22},{wch:28},{wch:11},{wch:14},{wch:14},{wch:14},{wch:14}];
 XLSX.utils.book_append_sheet(wb,'Weekly Summary',ws1);
 // ── Sheet 2: Staff Summary ──
 var ws2Data=[['Employee','Email','Event Hrs','Admin Hrs','Total Hrs']];
-Object.values(staffMap).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(s){
-ws2Data.push([s.name,s.email.replace(/^"+|"+$/g,''),(s.eventMs/3600000).toFixed(2),(s.adminMs/3600000).toFixed(2),((s.eventMs+s.adminMs)/3600000).toFixed(2)]);});
+Object.values(staffMap).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(st){
+ws2Data.push([st.name,st.email.replace(/^"+|"+$/g,''),(st.eventMs/3600000).toFixed(2),(st.adminMs/3600000).toFixed(2),((st.eventMs+st.adminMs)/3600000).toFixed(2)]);});
 var ws2=XLSX.utils.aoa_to_sheet(ws2Data);
 ws2['!cols']=[{wch:22},{wch:28},{wch:11},{wch:11},{wch:11}];
 XLSX.utils.book_append_sheet(wb,'Staff Summary',ws2);
@@ -630,16 +630,16 @@ XLSX.utils.book_append_sheet(wb,'Staff Summary',ws2);
 var ws3Data=[['Employee','Email','Role','Type','Event / Note','Date','Event Hrs','Admin Hrs']];
 ppOrder.forEach(function(ppKey){var pp=ppMap[ppKey];if(!pp)return;
 ws3Data.push(['--- PAY PERIOD: '+pp.label+' ---','','','','','Event: '+(pp.totalEventMs/3600000).toFixed(2)+'h','Admin: '+(pp.totalAdminMs/3600000).toFixed(2)+'h','']);
-Object.values(pp.staff).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(s){
-if(!s.eventMs&&!s.adminMs)return;var email=s.email.replace(/^"+|"+$/g,'');var firstRow=true;
-s.entries.sort(function(a,b){var da=a.ev?new Date(a.ev.date+'T12:00:00').getTime():(a.entry.clocked_in||0);var db2=b.ev?new Date(b.ev.date+'T12:00:00').getTime():(b.entry.clocked_in||0);return da-db2;});
-s.entries.forEach(function(item){var t=item.entry;
+Object.values(pp.staff).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(st){
+if(!st.eventMs&&!st.adminMs)return;var email=st.email.replace(/^"+|"+$/g,'');var firstRow=true;
+st.entries.sort(function(a,b){var da=a.ev?new Date(a.ev.date+'T12:00:00').getTime():(a.entry.clocked_in||0);var db2=b.ev?new Date(b.ev.date+'T12:00:00').getTime():(b.entry.clocked_in||0);return da-db2;});
+st.entries.forEach(function(item){var t=item.entry;
 var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):(item.ev?item.ev.date:'');
 var eventHrs=item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';
 var adminHrs=!item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';
-ws3Data.push([(firstRow?s.name:''),(firstRow?email:''),t.role||'',item.type,item.label,date,eventHrs,adminHrs]);
+ws3Data.push([(firstRow?st.name:''),(firstRow?email:''),t.role||'',item.type,item.label,date,eventHrs,adminHrs]);
 firstRow=false;});
-if(s.entries.length>1){ws3Data.push(['','','','','','TOTAL',(s.eventMs/3600000).toFixed(2)+'h evt',(s.adminMs/3600000).toFixed(2)+'h adm']);}});});
+if(st.entries.length>1){ws3Data.push(['','','','','','TOTAL',(st.eventMs/3600000).toFixed(2)+'h evt',(st.adminMs/3600000).toFixed(2)+'h adm']);}});});
 if(missingClockOut.length){ws3Data.push([]);ws3Data.push(['WARNING: MISSING CLOCK-OUTS','','','','','','','']);missingClockOut.forEach(function(m){ws3Data.push([m.name,m.email,m.event,m.clockIn,'','','','']);});}
 var ws3=XLSX.utils.aoa_to_sheet(ws3Data);
 ws3['!cols']=[{wch:20},{wch:28},{wch:11},{wch:11},{wch:24},{wch:12},{wch:11},{wch:11}];
