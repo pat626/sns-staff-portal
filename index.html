@@ -599,7 +599,7 @@ var grandVar=grandFee-grandAct;
 ws1rows.push(['GRAND TOTAL','','','$'+grandFee.toLocaleString(),'$'+Math.round(grandProj).toLocaleString(),'$'+Math.round(grandAct).toLocaleString(),'$'+Math.abs(Math.round(grandVar)).toLocaleString()+' '+(grandVar>=0?'under':'over')]);
 var ws1=XLSX.utils.aoa_to_sheet(ws1rows);
 ws1['!cols']=[{wch:24},{wch:28},{wch:11},{wch:14},{wch:15},{wch:14},{wch:16}];
-XLSX.utils.book_append_sheet(wb,'Weekly Summary',ws1);
+XLSX.utils.book_append_sheet(wb,ws1,'Weekly Summary');
 // Sheet 2: Staff Summary
 var ws2rows=[['Employee','Email','Event Hrs','Admin Hrs','Total Hrs']];
 Object.values(staffMap).sort(function(a,b){return toStr(a.name).localeCompare(toStr(b.name));}).forEach(function(stf){
@@ -607,7 +607,7 @@ ws2rows.push([toStr(stf.name),toStr(stf.email).replace(/^"+|"+$/g,''),(stf.event
 });
 var ws2=XLSX.utils.aoa_to_sheet(ws2rows);
 ws2['!cols']=[{wch:22},{wch:28},{wch:11},{wch:11},{wch:11}];
-XLSX.utils.book_append_sheet(wb,'Staff Summary',ws2);
+XLSX.utils.book_append_sheet(wb,ws2,'Staff Summary');
 // Sheet 3: Detailed Payroll
 var ws3rows=[['Employee','Email','Role','Type','Event / Note','Date','Event Hrs','Admin Hrs']];
 if(missingClockOut.length){
@@ -639,7 +639,7 @@ if(stf.entries.length>1){ws3rows.push(['','','','','','TOTAL',(stf.eventMs/36000
 });
 var ws3=XLSX.utils.aoa_to_sheet(ws3rows);
 ws3['!cols']=[{wch:20},{wch:28},{wch:11},{wch:11},{wch:24},{wch:12},{wch:11},{wch:11}];
-XLSX.utils.book_append_sheet(wb,'Detailed Payroll',ws3);
+XLSX.utils.book_append_sheet(wb,ws3,'Detailed Payroll');
 var wbOut=XLSX.write(wb,{bookType:'xlsx',type:'array'});
 var blob=new Blob([wbOut],{type:'application/octet-stream'});
 var url=URL.createObjectURL(blob);
