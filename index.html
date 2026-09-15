@@ -597,40 +597,6 @@ var lines=[];
 lines.push('SHAKEN & STIRRED EVENTS -- PAYROLL EXPORT');
 lines.push('Generated: '+new Date().toLocaleDateString([],{weekday:'long',year:'numeric',month:'long',day:'numeric'}));
 lines.push('Prepared for: Patrick Williams  Pat@forkhospitality.com');
-lines.push('');
-
-if(missingClockOut.length){lines.push('WARNING: MISSING CLOCK-OUTS');lines.push('Employee,Email,Event,Clocked In');missingClockOut.forEach(function(m){lines.push('"'+m.name+'","'+m.email+'","'+m.event+'","'+m.clockIn+'"');});lines.push('');}
-
-// SECTION: Weekly P&L Summary
-lines.push('WEEKLY LABOR SUMMARY');
-lines.push('Pay Period,Event,Date,Service Fee,Projected Labor,Actual Labor,Variance');
-ppOrder.forEach(function(ppKey){
-var ppLabel=ppMap[ppKey]?ppMap[ppKey].label:'';
-var eventsThisPP=Object.values(eventMap).filter(function(e){return e.ppKey===ppKey;}).sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
-if(!eventsThisPP.length)return;
-var ppFee=0;var ppProj=0;var ppActual=0;
-eventsThisPP.forEach(function(em){
-var ev=state.events.find(function(e){return e.id===Object.keys(eventMap).find(function(k){return eventMap[k]===em;});});
-if(!ev){ev=state.events.find(function(e){return e.name===em.name&&e.date===em.date;});}
-var fee=em.fee||0;var proj=ev?calcProjected(ev):0;var actual=calcActual(Object.keys(eventMap).find(function(k){return eventMap[k]===em;})||'');
-var variance=fee-actual;
-ppFee+=fee;ppProj+=proj;ppActual+=actual;
-lines.push('"'+ppLabel+'","'+em.name+'","'+em.date+'","$'+fee.toLocaleString()+'","$'+Math.round(proj).toLocaleString()+'","$'+Math.round(actual).toLocaleString()+'","$'+Math.round(Math.abs(variance)).toLocaleString()+' '+(variance>=0?'under':'over')+'"');
-});
-lines.push('"'+ppLabel+' TOTAL","","","$'+ppFee.toLocaleString()+'","$'+Math.round(ppProj).toLocaleString()+'","$'+Math.round(ppActual).toLocaleString()+'","$'+Math.round(Math.abs(ppFee-ppActual)).toLocaleString()+' '+(ppFee-ppActual>=0?'under':'over')+'"');
-lines.push('');
-});
-var grandFee=0;var grandProj=0;var grandActual=0;ppOrder.forEach(function(ppKey){var eventsThisPP=Object.values(eventMap).filter(function(e){return e.ppKey===ppKey;});eventsThisPP.forEach(function(em){var evObj=state.events.find(function(e){return e.name===em.name&&e.date===em.date;});var evId=Object.keys(eventMap).find(function(k){return eventMap[k]===em;})||'';grandFee+=em.fee||0;grandProj+=evObj?calcProjected(evObj):0;grandActual+=calcActual(evId);});});var grandVar=grandFee-grandActual;lines.push('GRAND TOTAL,"All periods","","$'+grandFee.toLocaleString()+'","$'+Math.round(grandProj).toLocaleString()+'","$'+Math.round(grandActual).toLocaleString()+'","$'+Math.round(Math.abs(grandVar)).toLocaleString()+' '+(grandVar>=0?'under':'over')+'"');lines.push('');
-
-// SECTION: Staff Summary
-lines.push('STAFF SUMMARY');lines.push('Employee,Email,Total Event Hrs,Total Admin Hrs,Grand Total');Object.values(staffMap).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(s){lines.push('"'+s.name+'","'+s.email.replace(/^"+|"+$/g,'')+'","'+(s.eventMs/3600000).toFixed(2)+'","'+(s.adminMs/3600000).toFixed(2)+'","'+((s.eventMs+s.adminMs)/3600000).toFixed(2)+'"');});
-lines.push('');
-
-// SECTION: Detailed Payroll
-lines.push('DETAILED PAYROLL');lines.push('Employee,Email,Role,Type,Event / Note,Date,Event Hrs,Admin Hrs');
-ppOrder.forEach(function(ppKey){var pp=ppMap[ppKey];if(!pp)return;lines.push('');lines.push('--- PAY PERIOD: '+pp.label+' ---,,,,,,Event: '+(pp.totalEventMs/3600000).toFixed(2)+'h,Admin: '+(pp.totalAdminMs/3600000).toFixed(2)+'h');Object.values(pp.staff).sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(s){if(!s.eventMs&&!s.adminMs)return;var email=s.email.replace(/^"+|"+$/g,'');var firstRow=true;s.entries.sort(function(a,b){var da=a.ev?new Date(a.ev.date+'T12:00:00').getTime():(a.entry.clocked_in||0);var db2=b.ev?new Date(b.ev.date+'T12:00:00').getTime():(b.entry.clocked_in||0);return da-db2;});s.entries.forEach(function(item){var t=item.entry;var date=t.clocked_in?new Date(t.clocked_in).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}):(item.ev?item.ev.date:'');var eventHrs=item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';var adminHrs=!item.isEvent?(item.isZero?'CHECK - 0.00':(item.ms/3600000).toFixed(2)):'';lines.push((firstRow?'"'+s.name+'"':'""')+',"'+(firstRow?email:'')+'",'+(t.role?'"'+t.role+'"':'""')+',"'+item.type+'","'+item.label+'","'+date+'","'+eventHrs+'","'+adminHrs+'"');firstRow=false;});if(s.entries.length>1){lines.push('"","","","","","TOTAL","'+(s.eventMs/3600000).toFixed(2)+'h evt","'+(s.adminMs/3600000).toFixed(2)+'h adm"');}});});
-
-var csv=lines.join('\n');var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='sns-payroll-'+new Date().toISOString().split('T')[0]+'.csv';a.click();showToast('Payroll export downloaded!');
 function closeModal(id){var m=document.getElementById(id);if(m)m.remove();}
 function openSettings(){var m=document.createElement('div');m.className='modal-bg';m.id='modal-settings';var h='<div class="modal"><div class="modal-title">Email Settings <button class="btn btn-sm sns-close-modal" data-modal="modal-settings"><i class="ti ti-x" aria-hidden="true"></i></button></div>';h+='<div class="info-box"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Set up at emailjs.com. Template variables: to_email, to_name, subject, message.</div></div>'+'<div class="form-group"><label class="form-label">Public key</label><input type="text" id="s-pk" value="'+esc(state.ejsPublicKey)+'"></div>';h+='<div class="form-group"><label class="form-label">Service ID</label><input type="text" id="s-sid" value="'+esc(state.ejsServiceId)+'"></div>';h+='<div class="form-group"><label class="form-label">Template ID</label><input type="text" id="s-tid" value="'+esc(state.ejsTemplateId)+'"></div>';h+='<div class="modal-actions"><button class="btn sns-close-modal" data-modal="modal-settings">Cancel</button><button class="btn btn-sm sns-test-email"><i class="ti ti-send" aria-hidden="true"></i> Test</button><button class="btn btn-gold sns-save-settings">Save</button></div></div>';m.innerHTML=h;document.body.appendChild(m);m.querySelectorAll('.sns-close-modal').forEach(function(b){b.onclick=function(){closeModal(b.dataset.modal);};});m.querySelector('.sns-test-email').onclick=function(){testEmail();};m.querySelector('.sns-save-settings').onclick=function(){saveSettings();};}
 async function init(){document.getElementById('main-content').innerHTML='<div class="loading"><i class="ti ti-loader" aria-hidden="true"></i> Connecting…</div>';try{loadLocal();var session=await db.auth.getSession();if(session.data&&session.data.session){state.adminLoggedIn=true;state.adminSession=session.data.session;document.getElementById('settings-btn').style.display='';}
