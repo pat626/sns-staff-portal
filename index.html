@@ -29,6 +29,19 @@
 .ss-badge-admin{font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(150,180,255,.12);color:#96b4ff;border:1px solid rgba(150,180,255,.25);font-weight:500;letter-spacing:.04em}
 .ss-badge-event{font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(46,125,82,.12);color:#66bb8a;border:1px solid rgba(102,187,138,.25);font-weight:500;letter-spacing:.04em}
 .ss-modal-info{background:rgba(201,168,76,.06);border:1px solid var(--ss-border);border-radius:4px;padding:10px 14px;margin-bottom:1.25rem}
+
+@media(min-width:900px){
+  .main{max-width:1280px;padding:2rem 2.5rem;}
+  .events-grid{grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
+  .stat-grid{grid-template-columns:repeat(4,1fr);}
+  .modal{max-width:680px;}
+  .tc-wrap{max-width:1100px;}
+  .tc-card{max-width:none;}
+}
+@media(min-width:1400px){
+  .main{max-width:1600px;}
+  .events-grid{grid-template-columns:repeat(auto-fill,minmax(400px,1fr));}
+}
 </style>
 </head>
 <body>
